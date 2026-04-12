@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>時計算シミュレーター</title>
+    <style>
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; background: #f0f2f5; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        .container { background: white; padding: 25px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 950px; display: grid; grid-template-columns: 420px 1fr; gap: 20px; }
+        h2 { grid-column: 1 / 3; color: #2c3e50; text-align: center; border-bottom: 3px solid #9b59b6; padding-bottom: 10px; margin-bottom: 10px; }
+        
+        .clock-container { position: relative; width: 400px; height: 400px; }
+        .clock-face { position: absolute; top: 50px; left: 50px; width: 300px; height: 300px; border: 6px solid #34495e; border-radius: 50%; background: #fff; z-index: 2; }
+        .hand { position: absolute; bottom: 50%; left: 50%; transform-origin: bottom center; border-radius: 4px; z-index: 5; }
+        .hour-hand { width: 8px; height: 85px; background: #2c3e50; }
+        .minute-hand { width: 5px; height: 125px; background: #e74c3c; }
+        .runner { position: absolute; width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 20px; z-index: 10; top: 183px; left: 183px; }
+        .runner-min { background: #e74c3c; color: white; border: 2px solid #c0392b; }
+        .runner-hour { background: #34495e; color: white; border: 2px solid #2c3e50; }
+
+        .controls { display: flex; flex-direction: column; gap: 12px; }
+        .section { background: #f8f9fa; padding: 12px; border-radius: 12px; border: 1px solid #e9ecef; }
+        .section-title { font-weight: bold; color: #8e44ad; margin-bottom: 8px; font-size: 14px; border-left: 4px solid #9b59b6; padding-left: 8px; }
+        
+        .time-panel { display: flex; align-items: center; gap: 8px; justify-content: center; }
+        .time-input { font-size: 20px; width: 55px; text-align: center; padding: 5px; border: 1px solid #bdc3c7; border-radius: 6px; }
+        
+        .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .btn { padding: 10px; border-radius: 6px; border: none; cursor: pointer; font-weight: bold; font-size: 13px; }
+        .btn-set { background: #34495e; color: white; }
+        .btn-play { background: #27ae60; color: white; font-size: 16px; grid-column: 1/3; }
+        .btn-step { background: #ecf0f1; color: #2c3e50; border: 1px solid #bdc3c7; }
+
+        .formula-card { background: #fff3e0; padding: 12px; border-radius: 12px; border: 1px solid #ffb74d; font-size: 13px; }
+        .formula-box { background: white; border: 1px solid #ffe0b2; padding: 8px; border-radius: 6px; margin-top: 5px; }
+        .formula-text { font-weight: bold; color: #e65100; font-family: 'Times New Roman', serif; }
+
+        .record-board { background: #e8f5e9; padding: 12px; border-radius: 12px; border: 1px solid #2e7d32; }
+        .record-row { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px dashed #a5d6a7; font-size: 14px; }
+        .val { font-weight: bold; font-family: monospace; color: #d35400; font-size: 18px; }
+
+        canvas#trackCanvas { position: absolute; top: 0; left: 0; z-index: 1; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>時計算シミュレーター</h2>
+
+    <div class="clock-container">
+        <canvas id="trackCanvas" width="400" height="400"></canvas>
+        <div class="clock-face">
+            <div id="hourHand" class="hand hour-hand"></div>
+            <div id="minHand" class="hand minute-hand"></div>
+        </div>
+        <div id="minRunner" class="runner runner-min">🏃</div>
+        <div id="hourRunner" class="runner runner-hour">🐢</div>
+    </div>
+
+    <div class="controls">
+        <div class="section">
+            <div class="section-title">1. 初期位置をセット</div>
+            <div class="time-panel">
+                <input type="number" id="inH" class="time-input" value="4" min="0" max="11"> 時
+                <input type="number" id="inM" class="time-input" value="0" min="0" max="59"> 分
+                <button class="btn btn-set" onclick="setManualTime()">セット</button>
+            </div>
+            <div class="btn-grid" style="margin-top:10px;">
+                <button class="btn btn-step" onclick="adjustStartTime(30)">+30分</button>
+                <button class="btn btn-step" onclick="adjustStartTime(-30)">-30分</button>
+            </div>
+        </div>
+
+        <div class="formula-card">
+            <div class="section-title" style="color: #e65100; border-color: #ffb74d;">この問題の解法</div>
+            <div class="formula-box">
+                <div>重なるまで：</div>
+                <div class="formula-text" id="f0Text">角度 ÷ 5.5</div>
+            </div>
+            <div class="formula-box">
+                <div>一直線まで：</div>
+                <div class="formula-text" id="f180Text">角度 ÷ 5.5</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="btn-grid">
+                <button class="btn btn-play" id="playBtn" onclick="togglePlay()">自動再生 (目標まで)</button>
+                <button class="btn btn-step" onclick="adjustTime(1)">+1分</button>
+                <button class="btn btn-step" onclick="adjustTime(0.1)">+0.1分</button>
+            </div>
+        </div>
+
+        <div class="record-board">
+            <div class="section-title" style="color: #2e7d32; border-color: #2e7d32;">記録ボード</div>
+            <div class="record-row"><span>0° (重なる)</span><span id="record0" class="val">--</span></div>
+            <div class="record-row"><span>180° (一直線)</span><span id="record180" class="val">--</span></div>
+            <div style="display: flex; justify-content: space-between; margin-top: 10px;">
+                <span style="font-size: 13px;">経過タイム:</span><span id="elapsed" class="val">0.00 分</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let startMinutes = 0;
+    let currentMinutes = 0;
+    let playing = false;
+    let timerId;
+    let targetT0 = 0;
+    let targetT180 = 0;
+    let done0 = false;
+    let done180 = false;
+
+    function init() {
+        const face = document.querySelector('.clock-face');
+        for (let i = 1; i <= 12; i++) {
+            const num = document.createElement('div');
+            num.style.position = 'absolute'; num.style.fontWeight = 'bold'; num.innerText = i;
+            const angle = (i * 30) * (Math.PI / 180);
+            num.style.left = (150 + 130 * Math.sin(angle) - 10) + 'px';
+            num.style.top = (150 - 130 * Math.cos(angle) - 10) + 'px';
+            face.appendChild(num);
+        }
+        setManualTime();
+    }
+
+    function setManualTime() {
+        const h = parseInt(document.getElementById('inH').value) || 0;
+        const m = parseInt(document.getElementById('inM').value) || 0;
+        startMinutes = (h % 12) * 60 + (m % 60);
+        currentMinutes = startMinutes;
+        done0 = false; done180 = false;
+        document.getElementById('record0').innerText = "--";
+        document.getElementById('record180').innerText = "--";
+        
+        // 公式とターゲットの事前計算
+        const initAngle = getDiffAngle(startMinutes);
+        
+        // 0度まで
+        targetT0 = initAngle / 5.5;
+        document.getElementById('f0Text').innerText = `${initAngle.toFixed(1)} ÷ 5.5 = ${targetT0.toFixed(2)}分`;
+
+        // 180度まで
+        let f180Str = "";
+        if (initAngle < 180) {
+            targetT180 = (180 + initAngle) / 5.5;
+            f180Str = `(180 + ${initAngle.toFixed(1)}) ÷ 5.5`;
+        } else {
+            targetT180 = (initAngle - 180) / 5.5;
+            f180Str = `(${initAngle.toFixed(1)} - 180) ÷ 5.5`;
+        }
+        document.getElementById('f180Text').innerText = `${f180Str} = ${targetT180.toFixed(2)}分`;
+
+        stopPlay();
+        update();
+    }
+
+    function getDiffAngle(t) {
+        let mD = (t * 6) % 360;
+        let hD = (t * 0.5) % 360;
+        // 「長針から見た短針」の距離（旅人算の残りの道のり）
+        return (hD - mD + 360) % 360;
+    }
+
+    function togglePlay() {
+        if (done0 && done180) setManualTime(); 
+        playing = !playing;
+        document.getElementById('playBtn').innerText = playing ? "停止" : "自動再生 (目標まで)";
+        if (playing) {
+            timerId = setInterval(() => {
+                currentMinutes += 0.05; 
+                let elapsed = currentMinutes - startMinutes;
+
+                // 経過時間が計算上のターゲットを超えたら記録を埋める
+                if (!done0 && elapsed >= targetT0) {
+                    document.getElementById('record0').innerText = targetT0.toFixed(2) + " 分";
+                    done0 = true;
+                }
+                if (!done180 && elapsed >= targetT180) {
+                    document.getElementById('record180').innerText = targetT180.toFixed(2) + " 分";
+                    done180 = true;
+                }
+
+                update();
+
+                // 両方埋まったら停止
+                if (done0 && done180) stopPlay();
+            }, 30);
+        } else {
+            stopPlay();
+        }
+    }
+
+    function stopPlay() {
+        playing = false;
+        clearInterval(timerId);
+        document.getElementById('playBtn').innerText = "自動再生 (目標まで)";
+    }
+
+    function adjustTime(m) {
+        stopPlay();
+        currentMinutes += m;
+        let elapsed = currentMinutes - startMinutes;
+        if (!done0 && elapsed >= targetT0) {
+            document.getElementById('record0').innerText = targetT0.toFixed(2) + " 分";
+            done0 = true;
+        }
+        if (!done180 && elapsed >= targetT180) {
+            document.getElementById('record180').innerText = targetT180.toFixed(2) + " 分";
+            done180 = true;
+        }
+        update();
+    }
+
+    function adjustStartTime(m) {
+        let total = parseInt(document.getElementById('inH').value) * 60 + parseInt(document.getElementById('inM').value) + m;
+        total = (total + 720) % 720;
+        document.getElementById('inH').value = Math.floor(total / 60);
+        document.getElementById('inM').value = total % 60;
+        setManualTime();
+    }
+
+    function update() {
+        const mDeg = (currentMinutes * 6) % 360;
+        const hDeg = (currentMinutes * 0.5) % 360;
+        document.getElementById('minHand').style.transform = `rotate(${mDeg}deg)`;
+        document.getElementById('hourHand').style.transform = `rotate(${hDeg}deg)`;
+
+        const R = 180;
+        const mx = 200 + R * Math.sin(mDeg * Math.PI / 180);
+        const my = 200 - R * Math.cos(mDeg * Math.PI / 180);
+        const hx = 200 + R * Math.sin(hDeg * Math.PI / 180);
+        const hy = 200 - R * Math.cos(hDeg * Math.PI / 180);
+        document.getElementById('minRunner').style.left = (mx - 17) + 'px';
+        document.getElementById('minRunner').style.top = (my - 17) + 'px';
+        document.getElementById('hourRunner').style.left = (hx - 17) + 'px';
+        document.getElementById('hourRunner').style.top = (hy - 17) + 'px';
+
+        document.getElementById('elapsed').innerText = Math.abs(currentMinutes - startMinutes).toFixed(2) + " 分";
+        drawTrack(mDeg, hDeg);
+    }
+
+    function drawTrack(mDeg, hDeg) {
+        const canvas = document.getElementById('trackCanvas');
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, 400, 400);
+        ctx.beginPath();
+        ctx.arc(200, 200, 180, 0, Math.PI * 2);
+        ctx.strokeStyle = '#ddd'; ctx.lineWidth = 2; ctx.stroke();
+        ctx.beginPath(); ctx.lineWidth = 10; ctx.strokeStyle = 'rgba(155, 89, 182, 0.5)';
+        ctx.arc(200, 200, 180, (mDeg - 90) * Math.PI / 180, (hDeg - 90) * Math.PI / 180, false);
+        ctx.stroke();
+    }
+
+    init();
+</script>
+</body>
+</html>
