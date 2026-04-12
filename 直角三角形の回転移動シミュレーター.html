@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>直角三角形の回転移動（初期位置固定版）</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; background: #fdfdfd; padding: 20px; }
+        .controls { margin-bottom: 20px; }
+        button { padding: 12px 24px; font-size: 16px; cursor: pointer; border-radius: 6px; border: 1px solid #ddd; background: #fff; }
+        #startBtn { background: #3498db; color: white; border: none; font-weight: bold; }
+        #startBtn:disabled { background: #ccc; }
+        canvas { background: white; border-bottom: 2px solid #333; }
+    </style>
+</head>
+<body>
+
+    <h2>直角三角形の回転：もとの位置を表示</h2>
+    <div class="controls">
+        <button id="startBtn">回転させる</button>
+        <button id="resetBtn">リセット</button>
+    </div>
+
+    <canvas id="canvas" width="800" height="500"></canvas>
+
+<script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const startBtn = document.getElementById('startBtn');
+    const resetBtn = document.getElementById('resetBtn');
+
+    const scale = 60;
+    const AC = 3 * scale;
+    const AB = 4 * scale;
+    const BC = 5 * scale;
+    const cx = 500; 
+    const cy = 350;
+
+    let angle = 0;
+    const targetAngle = Math.PI / 2; 
+    let isAnimating = false;
+
+    const traceCanvas = document.createElement('canvas');
+    traceCanvas.width = canvas.width;
+    traceCanvas.height = canvas.height;
+    const tCtx = traceCanvas.getContext('2d');
+
+    // 頂点計算
+    const getVertices = (a) => {
+        const baseAngle = Math.atan2(AB, AC); 
+        return {
+            c: { x: cx, y: cy },
+            b: { x: cx - BC * Math.cos(a), y: cy - BC * Math.sin(a) },
+            a: { x: cx - AC * Math.cos(a + baseAngle), y: cy - AC * Math.sin(a + baseAngle) }
+        };
+    };
+
+    // 直角マークを描画する関数
+    function drawRightAngle(context, pA, pB, pC, size = 15) {
+        // Aが直角の頂点。AC方向とAB方向の単位ベクトルを求める
+        const lenAC = Math.sqrt((pC.x-pA.x)**2 + (pC.y-pA.y)**2);
+        const lenAB = Math.sqrt((pB.x-pA.x)**2 + (pB.y-pA.y)**2);
+        const ux = (pC.x - pA.x) / lenAC;
+        const uy = (pC.y - pA.y) / lenAC;
+        const vx = (pB.x - pA.x) / lenAB;
+        const vy = (pB.y - pA.y) / lenAB;
+
+        context.beginPath();
+        context.moveTo(pA.x + ux * size, pA.y + uy * size);
+        context.lineTo(pA.x + ux * size + vx * size, pA.y + uy * size + vy * size);
+        context.lineTo(pA.x + vx * size, pA.y + vy * size);
+        context.stroke();
+    }
+
+    function drawTriangle(v, color, isDashed = false, showLabels = false) {
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        if (isDashed) ctx.setLineDash([5, 5]);
+
+        ctx.beginPath();
+        ctx.moveTo(v.c.x, v.c.y);
+        ctx.lineTo(v.b.x, v.b.y);
+        ctx.lineTo(v.a.x, v.a.y);
+        ctx.closePath();
+        ctx.stroke();
+
+        drawRightAngle(ctx, v.a, v.b, v.c);
+
+        if (showLabels) {
+            ctx.fillStyle = color;
+            ctx.font = "bold 18px sans-serif";
+            ctx.fillText("C", v.c.x + 10, v.c.y + 20);
+            ctx.fillText("B", v.b.x - 25, v.b.y + 10);
+            ctx.fillText("A", v.a.x - 15, v.a.y - 15);
+        }
+        ctx.restore();
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(traceCanvas, 0, 0);
+
+        // 1. もとの三角形（固定表示）
+        const vStart = getVertices(0);
+        drawTriangle(vStart, "#bbb", true, true);
+
+        // 2. 現在の三角形（動く方）
+        const vCurrent = getVertices(angle);
+        drawTriangle(vCurrent, "#333", false, isAnimating || angle === targetAngle);
+    }
+
+    function recordTrace(prevA, currA) {
+        tCtx.save();
+        tCtx.beginPath();
+        tCtx.arc(cx, cy, BC, Math.PI + prevA, Math.PI + currA);
+        const baseAngle = Math.atan2(AB, AC); 
+        tCtx.arc(cx, cy, AC, Math.PI + baseAngle + currA, Math.PI + baseAngle + prevA, true);
+        tCtx.closePath();
+        tCtx.fillStyle = "rgba(100, 100, 100, 0.3)";
+        tCtx.fill();
+        
+        // 境界線（弧）
+        tCtx.strokeStyle = "#555";
+        tCtx.lineWidth = 1;
+        tCtx.beginPath(); tCtx.arc(cx, cy, BC, Math.PI + prevA, Math.PI + currA); tCtx.stroke();
+        tCtx.beginPath(); tCtx.arc(cx, cy, AC, Math.PI + baseAngle + prevA, Math.PI + baseAngle + currA); tCtx.stroke();
+        tCtx.restore();
+    }
+
+    function animate() {
+        const speed = 0.02;
+        if (angle < targetAngle) {
+            isAnimating = true;
+            let oldAngle = angle;
+            angle += speed;
+            if (angle > targetAngle) angle = targetAngle;
+            recordTrace(oldAngle, angle);
+            draw();
+            requestAnimationFrame(animate);
+        } else {
+            isAnimating = false;
+            startBtn.disabled = true;
+            draw();
+        }
+    }
+
+    resetBtn.addEventListener('click', () => {
+        angle = 0; isAnimating = false; startBtn.disabled = false;
+        tCtx.clearRect(0, 0, canvas.width, canvas.height);
+        draw();
+    });
+
+    startBtn.addEventListener('click', () => { if (!isAnimating) animate(); });
+
+    draw();
+</script>
+</body>
+</html>

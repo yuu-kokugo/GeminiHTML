@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>動点Pシミュレーター（完成版）</title>
+    <style>
+        body { font-family: "Helvetica Neue", Arial, sans-serif; text-align: center; background: #f0f4f8; padding: 20px; }
+        .container { display: flex; justify-content: center; gap: 20px; flex-wrap: wrap; }
+        canvas { background: white; border: 2px solid #333; border-radius: 8px; }
+        .controls { margin-top: 20px; padding: 20px; background: white; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); display: inline-block; }
+        button { padding: 12px 24px; font-size: 18px; cursor: pointer; background: #3498db; color: white; border: none; border-radius: 4px; font-weight: bold; }
+        button:hover { background: #2980b9; }
+        .status { font-size: 22px; font-weight: bold; margin-bottom: 15px; }
+        .label { font-size: 14px; color: #666; margin-bottom: 5px; }
+    </style>
+</head>
+<body>
+
+    <h1>動点Pと面積の変化</h1>
+    <div class="status">
+        道のり: <span id="dist-val">0</span>cm / 
+        面積: <span id="area-val">0</span>cm²
+    </div>
+
+    <div class="container">
+        <div>
+            <div class="label">長方形ABCD上の動き</div>
+            <canvas id="geometryCanvas" width="400" height="300"></canvas>
+        </div>
+        <div>
+            <div class="label">面積の変化グラフ（台形）</div>
+            <canvas id="graphCanvas" width="400" height="300"></canvas>
+        </div>
+    </div>
+
+    <div class="controls">
+        <button id="startBtn">動きをスタート / リセット</button>
+        <p>点Pは 毎秒1cm で A→B→C→D と進みます。</p>
+    </div>
+
+<script>
+    const gCanvas = document.getElementById('geometryCanvas');
+    const gCtx = gCanvas.getContext('2d');
+    const graphCanvas = document.getElementById('graphCanvas');
+    const graphCtx = graphCanvas.getContext('2d');
+
+    // 設定
+    const rectW = 8; // AD = 8cm
+    const rectH = 5; // AB = 5cm
+    const scale = 30; // 1cm = 30px
+    const offX = 80, offY = 50;
+    const totalTime = rectH + rectW + rectH; // 5 + 8 + 5 = 18秒
+
+    let time = 0;
+    let isRunning = false;
+    let animeId = null;
+
+    // 面積計算 (台形グラフのロジック)
+    function getArea(t) {
+        let h = 0;
+        if (t <= 5) h = t;           // A→B: 増加
+        else if (t <= 13) h = 5;     // B→C: 一定
+        else if (t <= 18) h = 18 - t; // C→D: 減少
+        return (8 * h) / 2;
+    }
+
+    function draw() {
+        // --- 1. 図形の描画 ---
+        gCtx.clearRect(0, 0, 400, 300);
+        gCtx.strokeStyle = "#333";
+        gCtx.lineWidth = 2;
+        gCtx.strokeRect(offX, offY, rectW * scale, rectH * scale); // 長方形
+
+        // 点Pの位置計算
+        let px = offX, py = offY;
+        if (time <= 5) { px = offX; py = offY + time * scale; }
+        else if (time <= 13) { px = offX + (time - 5) * scale; py = offY + 5 * scale; }
+        else { px = offX + 8 * scale; py = offY + (18 - time) * scale; }
+
+        // 三角形塗りつぶし
+        gCtx.fillStyle = "rgba(231, 76, 60, 0.3)";
+        gCtx.beginPath();
+        gCtx.moveTo(offX, offY); // A
+        gCtx.lineTo(px, py);     // P
+        gCtx.lineTo(offX + 8 * scale, offY); // D
+        gCtx.fill();
+
+        // 点P
+        gCtx.fillStyle = "red";
+        gCtx.beginPath();
+        gCtx.arc(px, py, 6, 0, Math.PI*2);
+        gCtx.fill();
+
+        // --- 2. グラフの描画 ---
+        graphCtx.clearRect(0, 0, 400, 300);
+        graphCtx.strokeStyle = "#333";
+        graphCtx.beginPath();
+        graphCtx.moveTo(40, 260); graphCtx.lineTo(380, 260); // X軸
+        graphCtx.moveTo(40, 260); graphCtx.lineTo(40, 20);   // Y軸
+        graphCtx.stroke();
+
+        // 台形グラフの背景（全体）
+        graphCtx.strokeStyle = "#ddd";
+        graphCtx.lineWidth = 4;
+        graphCtx.beginPath();
+        graphCtx.moveTo(40 + 0, 260 - 0);
+        graphCtx.lineTo(40 + 5 * 18, 260 - 20 * 10);
+        graphCtx.lineTo(40 + 13 * 18, 260 - 20 * 10);
+        graphCtx.lineTo(40 + 18 * 18, 260 - 0);
+        graphCtx.stroke();
+
+        // グラフ上の現在地点
+        let area = getArea(time);
+        graphCtx.fillStyle = "blue";
+        graphCtx.beginPath();
+        graphCtx.arc(40 + time * 18, 260 - area * 10, 6, 0, Math.PI*2);
+        graphCtx.fill();
+
+        // 数値表示
+        document.getElementById('dist-val').innerText = time.toFixed(1);
+        document.getElementById('area-val').innerText = area.toFixed(1);
+
+        if (time < totalTime) {
+            time += 0.05;
+            animeId = requestAnimationFrame(draw);
+        } else {
+            isRunning = false;
+        }
+    }
+
+    document.getElementById('startBtn').addEventListener('click', () => {
+        if (isRunning) {
+            cancelAnimationFrame(animeId);
+            isRunning = false;
+        }
+        time = 0;
+        isRunning = true;
+        draw();
+    });
+
+    draw(); // 初期状態を表示
+</script>
+</body>
+</html>

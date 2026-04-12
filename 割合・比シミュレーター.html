@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>割合・比 シミュレーター</title>
+    <style>
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; background: #f0f4f8; color: #333; margin: 0; padding: 20px; display: flex; justify-content: center; }
+        .card { background: white; padding: 25px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 100%; max-width: 1100px; }
+        h2 { color: #1976d2; border-bottom: 2px solid #e3f2fd; padding-bottom: 10px; margin-top: 0; }
+        
+        .main-layout { display: flex; flex-direction: column; gap: 20px; }
+        
+        .control-panel { display: flex; flex-direction: column; gap: 15px; background: #f8f9fa; padding: 20px; border-radius: 12px; border: 1px solid #eee; }
+        .input-group { width: 100%; }
+        .label-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+        label { font-weight: bold; color: #555; font-size: 14px; }
+        input[type="number"] { width: 80px; padding: 5px; border: 1px solid #ccc; border-radius: 4px; font-size: 16px; text-align: right; }
+        input[type="range"] { width: 100%; cursor: pointer; }
+
+        .viz-section { margin: 10px 0; }
+        .bar-base { height: 18px; background: #e0e0e0; border-radius: 9px; position: relative; overflow: hidden; border: 1px solid #ccc; }
+        .bar-fill { height: 100%; background: linear-gradient(90deg, #4caf50, #8bc34a); transition: width 0.3s ease; }
+
+        .table-container { position: relative; margin-top: 40px; padding: 30px 0; }
+        .cross-table { width: 100%; border-collapse: separate; border-spacing: 0px 50px; table-layout: fixed; }
+        .cross-table th { background: #e3f2fd; color: #1565c0; padding: 10px; border-radius: 8px; font-size: 14px; }
+        
+        .cell-wrapper { position: relative; padding: 0 15px; }
+        .cell { background: white; border: 2px solid #ddd; border-radius: 10px; height: 110px; display: flex; flex-direction: column; justify-content: center; align-items: center; position: relative; font-size: 20px; font-weight: bold; z-index: 10; }
+        .cell-label { font-size: 11px; color: #999; margin-bottom: 4px; font-weight: normal; }
+        
+        .ratio-details { font-size: 11px; color: #666; font-weight: normal; margin-top: 5px; text-align: center; }
+        .ratio-details span { margin: 0 4px; color: #e91e63; }
+
+        /* 矢印ボックス */
+        .arrow-box {
+            position: absolute;
+            display: flex;
+            z-index: 100;
+            font-size: 11px;
+            font-weight: bold;
+            color: #e91e63;
+            pointer-events: none;
+        }
+
+        /* 世界の間の矢印（上下並び） */
+        .arr-h { top: 50%; transform: translateY(-50%); width: 40px; left: -20px; flex-direction: column; align-items: center; }
+        .arr-text { background: rgba(233, 30, 99, 0.9); color: white; padding: 1px 5px; border-radius: 4px; margin: 1px 0; white-space: nowrap; }
+
+        /* 縦の関係の矢印（左右並び） */
+        .arr-v { left: 50%; transform: translateX(-50%); top: -55px; height: 50px; flex-direction: row; align-items: center; gap: 10px; }
+
+        /* 分数表示 */
+        .frac { display: inline-flex; flex-direction: column; vertical-align: middle; text-align: center; font-size: 10px; line-height: 1; }
+        .frac .num { border-bottom: 1px solid white; padding: 0 2px 1px; }
+        .frac .den { padding: 1px 2px 0; }
+
+        .formula-box { background: #fffde7; border: 1px dashed #ffd54f; padding: 15px; border-radius: 8px; text-align: center; font-size: 18px; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2>比・割合 シミュレーター</h2>
+    
+    <div class="main-layout">
+        <div class="control-panel">
+            <div class="input-group">
+                <div class="label-row"><label>もとにする量 (全体)</label><input type="number" id="baseNum" value="300"></div>
+                <input type="range" id="baseRange" min="1" max="1000" value="300">
+            </div>
+            <div class="input-group">
+                <div class="label-row"><label>比べる量</label><input type="number" id="compNum" value="200"></div>
+                <input type="range" id="compRange" min="0" max="1000" value="200">
+            </div>
+        </div>
+
+        <div class="viz-section">
+            <div class="bar-base"><div class="bar-fill" id="fill"></div></div>
+        </div>
+
+        <div class="table-container">
+            <table class="cross-table">
+                <tr>
+                    <th>① 割合の世界</th>
+                    <th>② 具体的な数字</th>
+                    <th>③ 整数比の世界</th>
+                </tr>
+                <tr>
+                    <td class="cell-wrapper"><div class="cell"><span class="cell-label">もと</span>1</div></td>
+                    <td class="cell-wrapper">
+                        <div class="cell">
+                            <span class="cell-label">もと</span><span id="t-base">300</span>
+                            <div class="arrow-box arr-h">
+                                <div class="arr-text">➡×<span id="m-h1-f">300</span></div>
+                                <div class="arr-text">⬅÷<span id="m-h1-b">300</span></div>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="cell-wrapper">
+                        <div class="cell">
+                            <span class="cell-label">もと</span><span id="t-bratio">3</span>
+                            <div class="arrow-box arr-h">
+                                <div class="arr-text">➡÷<span id="m-gcd1-f">100</span></div>
+                                <div class="arr-text">⬅×<span id="m-gcd1-b">100</span></div>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+                <tr>
+                    <td class="cell-wrapper">
+                        <div class="cell">
+                            <span class="cell-label">比べ</span><span id="t-ratio">0.66...</span>
+                            <div class="ratio-details" id="t-ratio-sub"></div>
+                            <div class="arrow-box arr-v">
+                                <div class="arr-text">⬇×<span id="m-v1-f"></span></div>
+                                <div class="arr-text">⬆×<span id="m-v1-b"></span></div>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="cell-wrapper">
+                        <div class="cell">
+                            <span class="cell-label">比べ</span><span id="t-comp">200</span>
+                            <div class="arrow-box arr-h">
+                                <div class="arr-text">➡×<span id="m-h2-f">300</span></div>
+                                <div class="arr-text">⬅÷<span id="m-h2-b">300</span></div>
+                            </div>
+                            <div class="arrow-box arr-v">
+                                <div class="arr-text">⬇×<span id="m-v2-f"></span></div>
+                                <div class="arr-text">⬆×<span id="m-v2-b"></span></div>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="cell-wrapper">
+                        <div class="cell">
+                            <span class="cell-label">比べ</span><span id="t-cratio">2</span>
+                            <div class="arrow-box arr-h">
+                                <div class="arr-text">➡÷<span id="m-gcd2-f">100</span></div>
+                                <div class="arr-text">⬅×<span id="m-gcd2-b">100</span></div>
+                            </div>
+                            <div class="arrow-box arr-v">
+                                <div class="arr-text">⬇×<span id="m-v3-f"></span></div>
+                                <div class="arr-text">⬆×<span id="m-v3-b"></span></div>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+            </table>
+        </div>
+
+        <div class="formula-box" id="formula"></div>
+    </div>
+</div>
+
+<script>
+    const baseNum = document.getElementById('baseNum');
+    const compNum = document.getElementById('compNum');
+    const baseRange = document.getElementById('baseRange');
+    const compRange = document.getElementById('compRange');
+
+    function gcd(a, b) { return b ? gcd(b, a % b) : a; }
+
+    // 分数ラベルを「比べる量 / もとにする量」の形
+    function getRawFractionHtml(num, den) {
+        if (den === 0) return "0";
+        if (den === 1) return num;
+        return `<div class="frac"><span class="num">${num}</span><span class="den">${den}</span></div>`;
+    }
+
+    function formatSmart(val) {
+        if (val === 0) return "0";
+        let fixed4 = val.toFixed(4);
+        let s = parseFloat(fixed4).toString();
+        if (val.toFixed(10).substring(0,12) !== (fixed4 + "000000").substring(0, 12)) s += "...";
+        return s;
+    }
+
+    function update(e) {
+        if(e.target.id.includes('Range')) {
+            if(e.target.id.includes('base')) baseNum.value = baseRange.value;
+            else compNum.value = compRange.value;
+        } else {
+            if(e.target.id.includes('base')) baseRange.value = baseNum.value;
+            else compRange.value = compNum.value;
+        }
+
+        const b = Math.max(parseFloat(baseNum.value) || 1, 1);
+        const c = parseFloat(compNum.value) || 0;
+        const r = c / b;
+        const g = gcd(Math.round(c), Math.round(b));
+        const sNum = Math.round(c/g);
+        const sDen = Math.round(b/g);
+
+        document.getElementById('fill').style.width = Math.min((c/b)*100, 100) + '%';
+
+        document.getElementById('t-base').innerText = b;
+        document.getElementById('t-comp').innerText = c;
+        document.getElementById('t-ratio').innerText = formatSmart(r);
+        document.getElementById('t-bratio').innerText = sDen;
+        document.getElementById('t-cratio').innerText = sNum;
+
+        const percent = (r * 100).toFixed(1).replace(/\.0$/, "");
+        const wari = Math.floor(r * 10);
+        const bu = Math.floor((r * 100) % 10);
+        const buai = (r >= 0.1) ? `${wari}割${bu}分` : `${bu*10}厘`;
+        document.getElementById('t-ratio-sub').innerHTML = `<span>${percent}%</span> / <span>${buai}</span>`;
+
+        // 横矢印
+        const hVals = [document.getElementById('m-h1-f'), document.getElementById('m-h1-b'), document.getElementById('m-h2-f'), document.getElementById('m-h2-b')];
+        hVals.forEach(el => el.innerText = b);
+        const gVals = [document.getElementById('m-gcd1-f'), document.getElementById('m-gcd1-b'), document.getElementById('m-gcd2-f'), document.getElementById('m-gcd2-b')];
+        gVals.forEach(el => el.innerText = g);
+
+        // 縦矢印（生データとしての分数）
+        // 比べる量(c) / もとにする量(b) をそのまま表示
+        const fHtml = getRawFractionHtml(c, b);
+        const bHtml = getRawFractionHtml(b, c);
+        
+        [document.getElementById('m-v1-f'), document.getElementById('m-v2-f'), document.getElementById('m-v3-f')].forEach(el => el.innerHTML = fHtml);
+        [document.getElementById('m-v1-b'), document.getElementById('m-v2-b'), document.getElementById('m-v3-b')].forEach(el => el.innerHTML = bHtml);
+
+        document.getElementById('formula').innerHTML = `式： ${c} ÷ ${b} = ${formatSmart(r)} <span style="font-size:14px; color:#666;">(${sNum}/${sDen})</span>`;
+    }
+
+    [baseNum, baseRange, compNum, compRange].forEach(el => el.addEventListener('input', update));
+    update({target: baseRange});
+</script>
+</body>
+</html>

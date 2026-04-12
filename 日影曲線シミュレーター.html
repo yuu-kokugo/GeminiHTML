@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>日影曲線シミュレーター</title>
+    <style>
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; text-align: center; background: #f0f2f5; color: #333; margin: 0; padding: 20px; }
+        #container { display: flex; flex-direction: column; align-items: center; gap: 15px; }
+        .canvas-wrapper { background: #fff; border-radius: 20px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); border: 1px solid #e0e0e0; }
+        .control-section { width: 700px; background: #fff; padding: 25px; border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        #button-panel { display: flex; gap: 10px; margin-bottom: 20px; justify-content: center; }
+        button { padding: 12px 24px; cursor: pointer; border: none; border-radius: 8px; background: #e0e0e0; transition: all 0.3s; font-weight: bold; font-size: 14px; }
+        button.active { background: #007bff; color: white; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,123,255,0.3); }
+        .slider-container { display: flex; align-items: center; gap: 20px; margin: 20px 0; }
+        input[type="range"] { flex: 1; height: 8px; border-radius: 5px; background: #ddd; outline: none; }
+        .info { text-align: left; font-size: 0.95rem; border-top: 2px solid #f0f0f0; padding-top: 15px; line-height: 1.8; }
+        .highlight { color: #007bff; font-weight: 800; font-size: 1.2rem; }
+    </style>
+</head>
+<body>
+
+<div id="container">
+    <div class="canvas-wrapper">
+        <canvas id="skyCanvas" width="700" height="500"></canvas>
+    </div>
+
+    <div class="control-section">
+        <div id="button-panel">
+            <button id="btn-geji" onclick="setSeason('geji')">夏至 </button>
+            <button id="btn-shunbun" onclick="setSeason('shunbun')" class="active">春分・秋分</button>
+            <button id="btn-touji" onclick="setSeason('touji')">冬至</button>
+            <button id="btn-all" onclick="setSeason('all')">全表示</button>
+        </div>
+
+        <div class="slider-container">
+            <span>日の出</span>
+            <input type="range" id="timeSlider" min="-1.8" max="1.8" step="0.01" value="0">
+            <span>日の入り</span>
+        </div>
+
+        <div class="info">
+            時刻（目安）: <span id="time-text" class="highlight">12:00</span> | 
+            太陽高度: <span id="alt-text" class="highlight">55°</span><br>
+            <small>● <b>日の出から日の入りまで、バーを動かしてみましょう</small>
+        </div>
+    </div>
+</div>
+
+<script>
+const canvas = document.getElementById('skyCanvas');
+const ctx = canvas.getContext('2d');
+const slider = document.getElementById('timeSlider');
+
+const CX = 350, CY = 300; 
+const R = 220;           
+const STICK_H = 60;       
+const PERSPECTIVE = 0.5; 
+const LAT = 35 * Math.PI / 180; 
+const DECLS = { geji: 23.4, shunbun: 0, touji: -23.4 };
+const COLORS = { geji: '#00bcd4', shunbun: '#e91e63', touji: '#673ab7' };
+
+let currentSeason = 'shunbun';
+let timeAngle = 0; 
+
+function project3D(xNS, yUp, zEW) {
+    return {
+        px: CX + xNS,
+        py: CY - yUp + zEW * PERSPECTIVE 
+    };
+}
+
+function getSunData(season, tAngle) {
+    const decl = DECLS[season] * Math.PI / 180;
+    const sinAlt = Math.sin(LAT) * Math.sin(decl) + Math.cos(LAT) * Math.cos(decl) * Math.cos(tAngle);
+    const alt = Math.asin(Math.max(-1, Math.min(1, sinAlt)));
+    const cosAz = (Math.sin(decl) - Math.sin(LAT) * sinAlt) / (Math.cos(LAT) * Math.cos(alt));
+    let az = Math.acos(Math.max(-1, Math.min(1, cosAz)));
+    if (tAngle < 0) az = -az;
+
+    // xNS: 南(+)〜北(-) に修正
+    return {
+        xNS: R * Math.cos(alt) * Math.cos(az), 
+        yUp: R * Math.sin(alt),
+        zEW: -R * Math.cos(alt) * Math.sin(az),
+        alt: alt,
+        az: az
+    };
+}
+
+function drawSeason(season, isFocus) {
+    const color = COLORS[season];
+    
+    // 1. 太陽の通り道 (点線)
+    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let ta = -Math.PI; ta <= Math.PI; ta += 0.05) {
+        const s = getSunData(season, ta);
+        if (s.yUp >= -10) { 
+            const p = project3D(s.xNS, s.yUp, s.zEW);
+            if (ta === -Math.PI) ctx.moveTo(p.px, p.py); else ctx.lineTo(p.px, p.py);
+        }
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // 2. 日影曲線 (平行光線による計算)
+    ctx.strokeStyle = color;
+    ctx.lineWidth = (currentSeason === 'all' || isFocus) ? 3 : 1;
+    ctx.beginPath();
+    let started = false;
+    for (let ta = -2.5; ta <= 2.5; ta += 0.02) {
+        const s = getSunData(season, ta);
+        if (s.alt > 0.01) {
+            // 平行光線ロジック: 影の長さ L = h / tan(alt)
+            const L = STICK_H / Math.tan(s.alt);
+            // 影の方位は太陽の反対 (Az + PI)
+            const shadX = -Math.cos(s.az) * L;
+            const shadZEW = Math.sin(s.az) * L;
+            const p = project3D(shadX, 0, shadZEW);
+            
+            if (!started) ctx.moveTo(p.px, p.py); else ctx.lineTo(p.px, p.py);
+            started = true;
+        }
+    }
+    ctx.stroke();
+
+    // 3. 現在の太陽と影
+    if (isFocus || currentSeason === 'all') {
+        const s = getSunData(season, timeAngle);
+        if (s.alt > 0) {
+            const sunPos = project3D(s.xNS, s.yUp, s.zEW);
+            const L = STICK_H / Math.tan(s.alt);
+            const shadX = -Math.cos(s.az) * L;
+            const shadZEW = Math.sin(s.az) * L;
+            const shadowPos = project3D(shadX, 0, shadZEW);
+            
+            // 影
+            ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+            ctx.lineWidth = 6;
+            ctx.lineCap = 'round';
+            ctx.beginPath(); ctx.moveTo(CX, CY); ctx.lineTo(shadowPos.px, shadowPos.py); ctx.stroke();
+
+            // 太陽
+            ctx.shadowBlur = 15; ctx.shadowColor = color;
+            ctx.fillStyle = '#ff9800';
+            ctx.beginPath(); ctx.arc(sunPos.px, sunPos.py, 12, 0, Math.PI*2); ctx.fill();
+            ctx.shadowBlur = 0;
+            ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+            
+            if (isFocus) document.getElementById('alt-text').innerText = Math.round(s.alt * 180 / Math.PI) + "°";
+        }
+    }
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // 地面
+    ctx.fillStyle = '#fcfcfc';
+    ctx.beginPath(); ctx.ellipse(CX, CY, R, R * PERSPECTIVE, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#ddd'; ctx.lineWidth = 1; ctx.stroke();
+    
+    // 十字線
+    ctx.setLineDash([2, 2]);
+    ctx.strokeStyle = '#eee';
+    ctx.beginPath(); ctx.moveTo(CX - R, CY); ctx.lineTo(CX + R, CY); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(CX, CY - R * PERSPECTIVE); ctx.lineTo(CX, CY + R * PERSPECTIVE); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // 方角ラベル（左：南、右：北、手前：東、奥：西）
+    ctx.fillStyle = '#999'; ctx.font = 'bold 16px sans-serif';
+    ctx.fillText('南', CX - R - 25, CY + 5);
+    ctx.fillText('北', CX + R + 10, CY + 5);
+    ctx.fillText('西', CX - 10, CY - R * PERSPECTIVE - 15);
+    ctx.fillText('東', CX - 10, CY + R * PERSPECTIVE + 25);
+
+    // 季節の描画
+    if (currentSeason === 'all') {
+        ['touji', 'shunbun', 'geji'].forEach(s => drawSeason(s, false));
+        document.getElementById('alt-text').innerText = "-";
+    } else {
+        drawSeason(currentSeason, true);
+    }
+
+    // --- 棒を最後に描画（最前面） ---
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = '#3e2723'; 
+    ctx.lineWidth = 5; 
+    ctx.lineCap = 'round';
+    ctx.beginPath(); 
+    ctx.moveTo(CX, CY); 
+    ctx.lineTo(CX, CY - STICK_H); 
+    ctx.stroke();
+
+    // 時刻表示
+    const hours = 12 + (timeAngle / Math.PI) * 12;
+    let h = Math.floor(hours);
+    let m = Math.floor((hours % 1) * 60);
+    if(h < 0) h += 24;
+    document.getElementById('time-text').innerText = `${h}:${m.toString().padStart(2, '0')}`;
+}
+
+function setSeason(s) {
+    currentSeason = s;
+    document.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+    document.getElementById('btn-' + s).classList.add('active');
+    draw();
+}
+
+slider.addEventListener('input', (e) => {
+    timeAngle = parseFloat(e.target.value);
+    draw();
+});
+
+draw();
+</script>
+</body>
+</html>

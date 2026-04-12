@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>柱状図シミュレーター</title>
+    <style>
+        :root { --primary: #2c3e50; --accent: #3498db; --bg: #f0f2f5; }
+        body { font-family: 'Hiragino Kaku Gothic ProN', sans-serif; background: var(--bg); margin: 0; display: flex; flex-direction: column; align-items: center; height: 100vh; overflow: hidden; }
+        
+        #main-layout { display: grid; grid-template-columns: 380px 1fr; gap: 20px; width: 1200px; height: 95vh; padding: 20px; box-sizing: border-box; }
+        .card { background: white; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); padding: 15px; position: relative; display: flex; flex-direction: column; }
+
+        #map-area { width: 100%; height: 350px; background: #f1f8e9; border: 1px solid #ccc; position: relative; border-radius: 8px; }
+        #right-column-container { display: flex; flex-direction: column; gap: 15px; height: 100%; position: relative; }
+
+        #analysis-view { height: 420px; border: 2px solid #999; position: relative; background: #fff; overflow: hidden; border-radius: 8px; }
+        #elevation-axis { width: 60px; height: 100%; border-right: 2px solid #333; background: #fdfdfd; z-index: 5; position: absolute; left: 0; top: 0; }
+        
+        #stock-area { flex-grow: 1; border: 2px solid var(--accent); background: #ebf5fb; position: relative; border-radius: 8px; overflow: hidden; }
+        #depth-axis { width: 60px; height: 100%; border-right: 2px solid var(--accent); background: rgba(255,255,255,0.5); position: absolute; left: 0; top: 0; }
+        .stock-label { position: absolute; top: 8px; left: 70px; color: var(--accent); font-weight: bold; font-size: 0.9rem; }
+
+        .tick { position: absolute; right: 5px; font-size: 10px; transform: translateY(-50%); border-top: 1px solid #ddd; width: 100%; text-align: right; color: #666; }
+        .tick.major { border-top: 1.5px solid #333; font-weight: bold; color: #000; }
+
+        .column-unit { 
+            width: 70px; 
+            position: absolute; 
+            cursor: grab; 
+            z-index: 100;
+            background: white;
+            overflow: hidden;
+            border: 2px solid #333;
+            border-radius: 4px;
+            transition: transform 0.1s;
+        }
+        .column-unit:active { cursor: grabbing; box-shadow: 4px 4px 15px rgba(0,0,0,0.3); z-index: 1000; }
+        .col-label { background: var(--primary); color: white; font-size: 11px; text-align: center; padding: 4px 0; font-weight: bold; border-bottom: 2px solid #333; }
+        .col-bar { width: 100%; height: 250px; position: relative; background: white; }
+        
+        .layer { width: 100%; border-bottom: 1px solid #555; box-sizing: border-box; }
+        .reki { background: #d7ccc8; background-image: radial-gradient(#8d6e63 1.2px, transparent 1.2px); background-size: 5px 5px; }
+        .suna { background: #fff9c4; background-image: radial-gradient(#fbc02d 0.8px, transparent 0.8px); background-size: 4px 4px; }
+        .doro { background: #e3f2fd; }
+        .hai { background: #99aab5; border-top: 2px solid #23272a; border-bottom: 2px solid #23272a; position: relative; }
+        .hai::after { content: "v v v"; position: absolute; width: 100%; text-align: center; font-size: 8px; top: 50%; transform: translateY(-50%); color: #23272a; }
+
+        .legend { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.8rem; margin-top: 15px; }
+        .legend-item { display: flex; align-items: center; gap: 8px; }
+        .l-box { width: 18px; height: 18px; border: 1px solid #333; }
+        .guide-arrow { position: absolute; width: 100%; text-align: center; top: 45%; font-size: 120px; color: rgba(52, 152, 219, 0.05); font-weight: bold; pointer-events: none; }
+
+        .btn-reset { 
+            width: 100%; padding: 15px; margin-top: 20px; border: none; border-radius: 8px; 
+            font-weight: bold; cursor: pointer; transition: 0.2s; color: white; background: var(--primary);
+        }
+        .btn-reset:hover { background: #34495e; transform: translateY(-2px); }
+    </style>
+</head>
+<body>
+
+<div id="main-layout">
+    <div class="card">
+        <h2>地形図（等高線）</h2>
+        <div id="map-area"><canvas id="mapCanvas"></canvas></div>
+        <div class="legend">
+            <div class="legend-item"><div class="l-box reki"></div>れき岩</div>
+            <div class="legend-item"><div class="l-box suna"></div>砂岩</div>
+            <div class="legend-item"><div class="l-box doro"></div>泥岩</div>
+            <div class="legend-item"><div class="l-box hai"></div>凝灰岩 (火山灰)</div>
+        </div>
+        <p style="font-size: 0.85rem; color: #666; margin-top: 15px;">
+            ※地点A〜Dの標高を地形図から読み取りましょう。<br>
+            ※柱状図をドラッグして標高を合わせると、地層の広がりが見えてきます。
+        </p>
+        <button class="btn-reset" onclick="resetPositions()">配置をリセット</button>
+    </div>
+
+    <div id="right-column-container">
+        <div id="analysis-view">
+            <div class="guide-arrow">↑</div>
+            <div id="elevation-axis"></div>
+        </div>
+        <div id="stock-area">
+            <div id="depth-axis"></div>
+            <div class="stock-label">ボーリング調査結果（地表からの深さ）</div>
+        </div>
+    </div>
+</div>
+
+<script>
+const PX_M = 2.5; 
+const ALT_MAX = 150;
+const COL_HEIGHT_M = 100;
+const ARC_STEP = 42; // 等高線の間隔px
+
+// 各地点の標高と地図上の等高線位置を同期
+const points = {
+    A: { alt: 130, ring: 2, angle: 0.8, left: 100 }, 
+    B: { alt: 100, ring: 5, angle: 1.3, left: 250 }, 
+    C: { alt: 70,  ring: 8, angle: 1.4, left: 400 }, 
+    D: { alt: 90,  ring: 6, angle: 0.6, left: 550 }  
+};
+
+window.onload = initSim;
+
+function initSim() {
+    const eAxis = document.getElementById('elevation-axis');
+    eAxis.innerHTML = '<div class="guide-arrow">↑</div>';
+    for (let h = ALT_MAX; h >= 0; h -= 10) {
+        const t = createTick(h, (ALT_MAX - h) * PX_M, h + "m");
+        if(h % 50 === 0) t.classList.add('major');
+        eAxis.appendChild(t);
+    }
+    
+    const dAxis = document.getElementById('depth-axis');
+    for (let d = 0; d <= 100; d += 10) {
+        const t = createTick(d, d * PX_M + 40, d + "m"); 
+        if(d % 50 === 0) t.classList.add('major');
+        dAxis.appendChild(t);
+    }
+
+    drawMap();
+    Object.keys(points).forEach(id => createColumn(id));
+}
+
+function drawMap() {
+    const canvas = document.getElementById('mapCanvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = 350; canvas.height = 350;
+    ctx.strokeStyle = '#a1887f';
+    ctx.lineWidth = 1;
+
+    // 等高線の描画
+    for(let i=1; i<=12; i++) {
+        const radius = i * ARC_STEP;
+        ctx.beginPath(); 
+        ctx.arc(0, 0, radius, 0, Math.PI/2); 
+        ctx.stroke();
+        
+        const altLabel = 150 - (i * 10);
+        if (altLabel >= 60) {
+            ctx.fillStyle = '#8d6e63'; 
+            ctx.font = "10px sans-serif";
+            ctx.fillText(altLabel + "m", radius - 30, 12);
+        }
+    }
+
+    // 地点のプロット（等高線の真上に配置）
+    Object.keys(points).forEach(k => {
+        const p = points[k];
+        const r = p.ring * ARC_STEP;
+        const x = r * Math.cos(p.angle);
+        const y = r * Math.sin(p.angle);
+        
+        ctx.fillStyle = '#3498db'; 
+        ctx.beginPath(); 
+        ctx.arc(x, y, 12, 0, Math.PI*2); 
+        ctx.fill();
+        
+        ctx.fillStyle = 'white'; 
+        ctx.font = "bold 12px sans-serif"; 
+        ctx.fillText(k, x - 4, y + 4);
+    });
+}
+
+function createTick(val, top, text) {
+    const t = document.createElement('div');
+    t.className = 'tick';
+    t.style.top = top + 'px';
+    t.innerHTML = text;
+    return t;
+}
+
+function createColumn(id) {
+    const p = points[id];
+    const unit = document.createElement('div');
+    unit.className = 'column-unit';
+    unit.id = `col-${id}`;
+    
+    const stockAreaY = 420 + 15 + 40; 
+    unit.style.left = p.left + 'px';
+    unit.style.top = stockAreaY + 'px'; 
+    
+    const label = document.createElement('div');
+    label.className = 'col-label';
+    label.innerText = `地点 ${id}`;
+
+    const bar = document.createElement('div');
+    bar.className = 'col-bar';
+    bar.style.height = (COL_HEIGHT_M * PX_M) + 'px';
+
+    // 火山灰が標高50mに揃うよう計算 (標高 - 50m = 深さ)
+    const ashAlt = 50; 
+    const depthToAsh = p.alt - ashAlt;
+
+    const layers = [
+        {type:'reki', h: depthToAsh - 15},
+        {type:'suna', h: 10},
+        {type:'hai',  h: 8},
+        {type:'doro', h: 30},
+        {type:'reki', h: 50}
+    ];
+
+    layers.forEach(l => {
+        if(l.h <= 0) return;
+        const div = document.createElement('div');
+        div.className = 'layer ' + l.type;
+        div.style.height = (l.h * PX_M) + 'px';
+        bar.appendChild(div);
+    });
+
+    unit.appendChild(label); unit.appendChild(bar);
+    document.getElementById('right-column-container').appendChild(unit);
+    
+    makeDraggable(unit, p.alt);
+}
+
+function makeDraggable(el, targetAlt) {
+    let isDragging = false;
+    let offsetTop;
+
+    el.onmousedown = (e) => {
+        isDragging = true;
+        offsetTop = e.clientY - el.offsetTop;
+    };
+
+    document.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        const containerRect = document.getElementById('right-column-container').getBoundingClientRect();
+        let newTop = e.clientY - containerRect.top - offsetTop;
+        
+        const snapPos = (ALT_MAX - targetAlt) * PX_M;
+        if (Math.abs(newTop - snapPos) < 15) {
+            newTop = snapPos;
+            el.style.borderColor = "#27ae60";
+            el.style.boxShadow = "0 0 15px rgba(39, 174, 96, 0.6)";
+            el.style.transform = "scale(1.03)";
+        } else {
+            el.style.borderColor = "#333";
+            el.style.boxShadow = "none";
+            el.style.transform = "scale(1)";
+        }
+        el.style.top = newTop + 'px';
+    });
+
+    document.addEventListener('mouseup', () => { isDragging = false; });
+}
+
+function resetPositions() {
+    Object.keys(points).forEach(id => {
+        const el = document.getElementById(`col-${id}`);
+        const stockAreaY = 420 + 15 + 40; 
+        el.style.top = stockAreaY + 'px';
+        el.style.borderColor = "#333";
+        el.style.boxShadow = "none";
+        el.style.transform = "scale(1)";
+    });
+}
+</script>
+</body>
+</html>

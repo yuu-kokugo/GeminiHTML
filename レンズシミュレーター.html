@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>レンズシミュレーター</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; background: #050508; color: #eee; margin: 0; padding: 10px; overflow-x: hidden; }
+        #canvas-container { position: relative; background: #000; border: 2px solid #444; border-radius: 12px; margin: 10px auto; width: 900px; height: 500px; cursor: crosshair; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
+        canvas { position: absolute; top: 0; left: 0; }
+        #info-panel { max-width: 900px; margin: 10px auto; padding: 15px; background: #121215; border-radius: 10px; text-align: left; border-left: 6px solid #4caf50; min-height: 60px;}
+        #button-panel { max-width: 900px; margin: 10px auto; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+        button { flex: 1; padding: 10px 5px; cursor: pointer; background: #222; color: #fff; border: 1px solid #444; border-radius: 5px; font-size: 0.85rem; transition: 0.2s; }
+        button:hover { background: #4caf50; border-color: #fff; }
+        .highlight { color: #4caf50; font-weight: bold; }
+        .rule-box { display: flex; justify-content: space-around; font-size: 0.8rem; color: #aaa; margin-top: 10px; border-top: 1px solid #222; padding-top: 10px; }
+        .controls-hint { font-size: 0.75rem; color: #777; margin-top: 5px; }
+    </style>
+</head>
+<body>
+
+    <div id="canvas-container">
+        <canvas id="lensCanvas" width="900" height="500"></canvas>
+    </div>
+
+    <div id="button-panel">
+        <button onclick="jumpTo(2.5)">外側 (2.5f)</button>
+        <button onclick="jumpTo(2.0)">2倍 (2.0f)</button>
+        <button onclick="jumpTo(1.5)">間 (1.5f)</button>
+        <button onclick="jumpTo(1.0)">焦点上 (1.0f)</button>
+        <button onclick="jumpTo(0.5)">内側 (0.5f)</button>
+    </div>
+
+    <div id="info-panel">
+        <div id="status-text">
+            【物体の位置】 <span class="highlight" id="obj-pos-text">---</span><br>
+            【像の状態】 <span class="highlight" id="image-type-text">---</span>
+        </div>
+        <div class="rule-box" id="rule-display">
+            <span style="color:#ff4444;">● 軸に平行な光</span>
+            <span style="color:#44ff44;">● 中心を通る光</span>
+            <span id="rule-blue" style="color:#4444ff;">● 焦点を通る光</span>
+        </div>
+    </div>
+
+<script>
+const canvas = document.getElementById('lensCanvas');
+const ctx = canvas.getContext('2d');
+
+const W = canvas.width;
+const H = canvas.height;
+const CENTER_X = W / 2;
+const CENTER_Y = H / 2;
+
+let focalDist = 120; 
+let objX = CENTER_X - 240; 
+const objH = 80;
+let dragTarget = null;
+
+function jumpTo(ratio) {
+    objX = CENTER_X - (focalDist * ratio);
+    draw();
+}
+
+function handleStart(e) {
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+    if (Math.abs(x - objX) < 30) dragTarget = 'object';
+    else if (Math.abs(x - (CENTER_X + focalDist)) < 20) dragTarget = 'focal';
+    else if (Math.abs(x - (CENTER_X - focalDist)) < 20) dragTarget = 'focal';
+}
+
+function handleMove(e) {
+    if (!dragTarget) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+    if (dragTarget === 'object') objX = Math.min(CENTER_X - 5, x);
+    else if (dragTarget === 'focal') focalDist = Math.max(50, Math.abs(CENTER_X - x));
+    draw();
+    if(e.cancelable) e.preventDefault();
+}
+
+canvas.addEventListener('mousedown', handleStart);
+window.addEventListener('mousemove', handleMove);
+window.addEventListener('mouseup', () => dragTarget = null);
+canvas.addEventListener('touchstart', handleStart, {passive:false});
+window.addEventListener('touchmove', handleMove, {passive:false});
+window.addEventListener('touchend', () => dragTarget = null);
+
+function draw() {
+    ctx.clearRect(0, 0, W, H);
+
+    // 光軸
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(0, CENTER_Y); ctx.lineTo(W, CENTER_Y); ctx.stroke();
+
+    // レンズ厚み連動
+    const lensWidth = Math.max(8, 4000 / focalDist); 
+    ctx.fillStyle = 'rgba(100, 200, 255, 0.2)';
+    ctx.beginPath();
+    ctx.ellipse(CENTER_X, CENTER_Y, lensWidth, H/2 - 50, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+    ctx.stroke();
+
+    // 焦点 F
+    const f1 = CENTER_X - focalDist;
+    const f2 = CENTER_X + focalDist;
+    ctx.fillStyle = '#ff4444';
+    ctx.beginPath(); ctx.arc(f1, CENTER_Y, 6, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(f2, CENTER_Y, 6, 0, Math.PI*2); ctx.fill();
+    ctx.font = 'bold 14px sans-serif';
+    ctx.fillText('F', f1 - 5, CENTER_Y + 25);
+    ctx.fillText("F'", f2 - 5, CENTER_Y + 25);
+
+    const u = CENTER_X - objX; 
+    drawCandle(objX, CENTER_Y, objH, false);
+
+    // 写像計算
+    const v = (focalDist * u) / (u - focalDist);
+    const m = v / u; 
+    const imageX = CENTER_X + v;
+    const imageH = objH * m;
+    const headY = CENTER_Y - objH;
+
+    // 1. 平行光線 (Red)
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#ff4444';
+    ctx.beginPath();
+    ctx.moveTo(objX, headY);
+    ctx.lineTo(CENTER_X, headY);
+    if (u > focalDist) {
+        ctx.lineTo(W, headY + (W - CENTER_X) * ((CENTER_Y - headY) / (f2 - CENTER_X)));
+    } else {
+        const slope = (CENTER_Y - headY) / focalDist;
+        ctx.lineTo(W, headY + (W - CENTER_X) * slope);
+        ctx.setLineDash([5, 5]);
+        ctx.moveTo(CENTER_X, headY);
+        ctx.lineTo(0, headY - CENTER_X * slope);
+        ctx.setLineDash([]);
+    }
+    ctx.stroke();
+
+    // 2. 中心を通る光 (Green)
+    ctx.strokeStyle = '#44ff44';
+    ctx.beginPath();
+    ctx.moveTo(objX, headY);
+    const slope2 = (CENTER_Y - headY) / (CENTER_X - objX);
+    ctx.lineTo(W, CENTER_Y + (W - CENTER_X) * slope2);
+    if (u <= focalDist) {
+        ctx.setLineDash([5, 5]);
+        ctx.moveTo(CENTER_X, CENTER_Y);
+        ctx.lineTo(0, CENTER_Y - CENTER_X * slope2);
+        ctx.setLineDash([]);
+    }
+    ctx.stroke();
+
+    // 3. 焦点を通る光 (Blue) - 【修正】焦点より外側の時のみ描画
+    const blueRuleElement = document.getElementById('rule-blue');
+    if (u > focalDist) {
+        blueRuleElement.style.display = 'inline';
+        ctx.strokeStyle = '#4444ff';
+        ctx.beginPath();
+        ctx.moveTo(objX, headY);
+        const slope3 = (CENTER_Y - headY) / (f1 - objX);
+        const yAtLens = headY + (CENTER_X - objX) * slope3;
+        ctx.lineTo(CENTER_X, yAtLens);
+        ctx.lineTo(W, yAtLens);
+        ctx.stroke();
+    } else {
+        blueRuleElement.style.display = 'none';
+    }
+
+    // 像の描画
+    if (u > focalDist) {
+        drawCandle(imageX, CENTER_Y, -imageH, true);
+        // スクリーン表示
+        ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath(); ctx.moveTo(imageX, CENTER_Y - 150); ctx.lineTo(imageX, CENTER_Y + 150); ctx.stroke();
+        ctx.setLineDash([]);
+    } else if (u < focalDist) {
+        ctx.globalAlpha = 0.4;
+        drawCandle(imageX, CENTER_Y, -imageH, true);
+        ctx.globalAlpha = 1.0;
+    }
+
+    updateText(u, focalDist);
+}
+
+function drawCandle(x, y, h, isImage) {
+    const scale = Math.min(2.5, Math.abs(h)/80);
+    const w = 15 * scale;
+    ctx.fillStyle = isImage ? '#555' : '#eee';
+    ctx.fillRect(x - w/2, y, w, -h * 0.8);
+    ctx.fillStyle = isImage ? 'rgba(249, 215, 28, 0.3)' : '#f9d71c';
+    ctx.beginPath();
+    ctx.ellipse(x, y - h * 0.9, w/2, Math.abs(h)*0.15, 0, 0, Math.PI*2);
+    ctx.fill();
+}
+
+function updateText(u, f) {
+    const objPosText = document.getElementById('obj-pos-text');
+    const imageTypeText = document.getElementById('image-type-text');
+    const ratio = (u / f).toFixed(2);
+    objPosText.innerText = `焦点距離の ${ratio} 倍`;
+
+    let type = "";
+    if (u > 2 * f + 2) type = "縮小された倒立実像";
+    else if (Math.abs(u - 2 * f) <= 2) type = "等倍の倒立実像 (2倍の位置)";
+    else if (u > f + 2) type = "拡大された倒立実像";
+    else if (Math.abs(u - f) <= 2) type = "像はできません";
+    else type = "拡大された正立虚像 (虫めがね)";
+    imageTypeText.innerText = type;
+}
+
+draw();
+</script>
+</body>
+</html>

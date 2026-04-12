@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>食塩水の濃度シミュレーター</title>
+    <style>
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; background: #eef2f3; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        .container { background: white; padding: 25px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 950px; }
+        h2 { color: #2c3e50; text-align: center; margin-bottom: 20px; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+        
+        .setup-panel { display: flex; gap: 20px; margin-bottom: 10px; }
+        .beaker-control { flex: 1; background: #f8f9fa; padding: 15px; border-radius: 12px; border: 1px solid #dee2e6; }
+        .beaker-title { font-weight: bold; margin-bottom: 10px; display: block; color: #2980b9; }
+        
+        .input-group { margin-bottom: 10px; }
+        .input-group label { font-size: 13px; display: block; margin-bottom: 5px; }
+        .input-row { display: flex; align-items: center; gap: 10px; }
+        input[type="range"] { flex: 1; }
+        input[type="number"] { width: 65px; text-align: right; }
+
+        .special-check { font-size: 12px; color: #e67e22; font-weight: bold; margin-top: 5px; display: flex; align-items: center; gap: 5px; cursor: pointer; }
+
+        .viz-area { display: flex; justify-content: space-around; align-items: flex-end; height: 380px; margin: 20px 0 5px 0; border-bottom: 3px solid #7f8c8d; position: relative; padding-top: 40px; }
+        
+        .beaker-wrap { display: flex; flex-direction: column; align-items: center; position: relative; width: 220px; }
+        .beaker-info-top { position: absolute; top: -50px; text-align: center; font-size: 14px; font-weight: bold; width: 100%; height: 40px; line-height: 1.2; }
+        
+        .beaker { width: 120px; height: 160px; border: 3px solid #7f8c8d; border-top: none; border-radius: 0 0 10px 10px; position: relative; overflow: hidden; background: white; transition: opacity 0.3s; }
+        .beaker.result { width: 160px; height: 220px; }
+        
+        .salt-mountain { width: 100px; height: 60px; background: #fff; border-radius: 50% 50% 0 0; position: absolute; bottom: 0; display: none; border: 2px solid #bdc3c7; border-bottom: none; }
+        .solid-mode .beaker { opacity: 0; }
+        .solid-mode .salt-mountain { display: block; }
+
+        .liquid { position: absolute; bottom: 0; width: 100%; transition: height 0.5s ease; background: rgba(52, 152, 219, 0.25); }
+        .salt-layer { position: absolute; bottom: 0; width: 100%; background: #bdc3c7; transition: height 0.5s ease; border-top: 1px solid #95a5a6; }
+        
+        .salt-label { position: absolute; right: -10px; bottom: 10px; color: #e67e22; font-size: 13px; font-weight: bold; white-space: nowrap; opacity: 0; transition: 0.3s; background: rgba(255,255,255,0.9); padding: 2px 5px; border-radius: 4px; border: 1px solid #eee; z-index: 20; }
+        .is-split .salt-label { opacity: 1; }
+
+        .particle { position: absolute; width: 4px; height: 4px; background: white; border: 1px solid #bdc3c7; border-radius: 50%; transition: all 1s ease-in-out; pointer-events: none; }
+
+        .important-note { color: #d32f2f; font-weight: bold; font-size: 13px; text-align: center; margin-bottom: 15px; background: #ffebee; padding: 5px 15px; border-radius: 20px; width: fit-content; margin-left: auto; margin-right: auto; border: 1px solid #ffcdd2; }
+
+        .area-diagram { padding: 20px; background: #fffde7; border-radius: 12px; border: 2px dashed #f1c40f; }
+        .calc-step { font-size: 15px; margin: 4px 0; font-family: 'Courier New', monospace; }
+        
+        .formula-result { font-size: 22px; text-align: center; font-weight: bold; color: #c0392b; margin-top: 10px; background: white; padding: 10px; border-radius: 8px; border: 1px solid #f1c40f; }
+        
+        .controls { display: flex; justify-content: center; gap: 15px; margin: 10px 0; }
+        .btn { padding: 10px 20px; border-radius: 8px; border: none; cursor: pointer; font-weight: bold; transition: 0.2s; box-shadow: 0 4px 0 #2c3e50; }
+        .btn:active { transform: translateY(2px); box-shadow: 0 2px 0 #2c3e50; }
+        .btn-mix { background: #e67e22; color: white; }
+        .btn-split { background: #34495e; color: white; }
+        .btn-reset { background: #95a5a6; color: white; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>食塩水の濃度シミュレーター</h2>
+
+    <div class="setup-panel">
+        <div class="beaker-control">
+            <span class="beaker-title">ビーカー A</span>
+            <div class="input-group">
+                <label>質量（g）</label>
+                <div class="input-row">
+                    <input type="range" id="massA_r" min="0" max="500" step="10" value="200">
+                    <input type="number" id="massA_n" value="200" step="10">
+                </div>
+            </div>
+            <div class="input-group">
+                <label>濃度（%）</label>
+                <div class="input-row">
+                    <input type="range" id="concA_r" min="0" max="40" value="10">
+                    <input type="number" id="concA_n" value="10" max="40">
+                </div>
+                <label class="special-check"><input type="checkbox" id="pureA"> 塩(100%)にする</label>
+            </div>
+        </div>
+
+        <div class="beaker-control">
+            <span class="beaker-title">ビーカー B</span>
+            <div class="input-group">
+                <label>質量（g）</label>
+                <div class="input-row">
+                    <input type="range" id="massB_r" min="0" max="500" step="10" value="300">
+                    <input type="number" id="massB_n" value="300" step="10">
+                </div>
+            </div>
+            <div class="input-group">
+                <label>濃度（%）</label>
+                <div class="input-row">
+                    <input type="range" id="concB_r" min="0" max="40" value="20">
+                    <input type="number" id="concB_n" value="20" max="40">
+                </div>
+                <label class="special-check"><input type="checkbox" id="pureB"> 塩(100%)にする</label>
+            </div>
+        </div>
+    </div>
+
+    <div class="controls">
+        <button class="btn btn-split" onclick="toggleSplit()">塩を分離！</button>
+        <button class="btn btn-mix" onclick="mix()">まぜる！</button>
+        <button class="btn btn-reset" onclick="reset()">リセット</button>
+    </div>
+
+    <div class="viz-area" id="vizContainer">
+        <div class="beaker-wrap" id="wrapA">
+            <div class="beaker-info-top" id="infoA">200g<br>(10%)</div>
+            <div class="salt-mountain"></div>
+            <div class="beaker" id="beakerA">
+                <div class="liquid" id="liqA"></div>
+                <div class="salt-layer" id="saltA"></div>
+            </div>
+            <div class="salt-label" id="saltLabelA">塩: 20g</div>
+        </div>
+        
+        <div style="font-size: 30px; font-weight: bold; color: #bdc3c7; margin-bottom: 60px;">＋</div>
+
+        <div class="beaker-wrap" id="wrapB">
+            <div class="beaker-info-top" id="infoB">300g<br>(20%)</div>
+            <div class="salt-mountain"></div>
+            <div class="beaker" id="beakerB">
+                <div class="liquid" id="liqB"></div>
+                <div class="salt-layer" id="saltB"></div>
+            </div>
+            <div class="salt-label" id="saltLabelB">塩: 60g</div>
+        </div>
+
+        <div style="font-size: 30px; font-weight: bold; color: #bdc3c7; margin-bottom: 60px;">＝</div>
+
+        <div class="beaker-wrap">
+            <div class="beaker-info-top" id="infoR">--- g<br>(--- %)</div>
+            <div class="beaker result" id="beakerResult" style="border-color: #e67e22;">
+                <div class="liquid" id="liqR"></div>
+                <div class="salt-layer" id="saltR"></div>
+            </div>
+            <div class="salt-label" id="saltLabelR" style="right: -30px;">塩: --- g</div>
+        </div>
+    </div>
+
+    <div class="important-note">
+        ※実際は、塩の粒は目に見えないし分離もしません！こうやって「分けて」考えると計算が簡単になるよ！
+    </div>
+
+    <div class="area-diagram">
+        <div class="calc-step" id="calcA">Aの塩: ---</div>
+        <div class="calc-step" id="calcB">Bの塩: ---</div>
+        <div class="calc-step" id="calcTotal" style="border-top: 1px solid #f1c40f; padding-top:5px; font-weight:bold;">合計の塩: --- ／ 全体の重さ: ---</div>
+        <div class="formula-result" id="result-formula">
+            まぜた後の濃度： --- %
+        </div>
+    </div>
+</div>
+
+<script>
+    let isSplit = false;
+    let particles = {A: [], B: [], R: []};
+
+    // ❷ 数値をきれいに整形する関数
+    function formatValue(val) {
+        // 小数点第2位までに丸めたものと元の値を比較
+        let rounded = Math.round(val * 100) / 100;
+        if (val === rounded) {
+            return val.toString(); // 割り切れるならそのまま
+        }
+        return val.toFixed(2); // 割り切れないなら第2位まで
+    }
+
+    function sync(id) {
+        const r = document.getElementById(id + '_r');
+        const n = document.getElementById(id + '_n');
+        r.addEventListener('input', () => { n.value = r.value; updateView(); });
+        n.addEventListener('input', () => { r.value = n.value; updateView(); });
+    }
+
+    function updateView() {
+        ['A', 'B'].forEach(id => {
+            const m = parseFloat(document.getElementById(`mass${id}_n`).value) || 0;
+            const pureCheck = document.getElementById(`pure${id}`);
+            const concSlider = document.getElementById(`conc${id}_r`);
+            const concInput = document.getElementById(`conc${id}_n`);
+            
+            let c;
+            if (pureCheck.checked) {
+                c = 100;
+                concSlider.disabled = true; concInput.disabled = true; concInput.value = 100;
+            } else {
+                concSlider.disabled = false; concInput.disabled = false;
+                if (concInput.value > 40 && concInput.value < 100) concInput.value = 40;
+                c = parseFloat(concInput.value) || 0;
+            }
+
+            const s = m * (c / 100);
+            const wrap = document.getElementById(`wrap${id}`);
+            if(c >= 100) wrap.classList.add('solid-mode');
+            else wrap.classList.remove('solid-mode');
+
+            document.getElementById(`info${id}`).innerHTML = c >= 100 ? `塩のみ<br>${m}g` : `${m}g<br>(${formatValue(c)}%)`;
+            document.getElementById(`liq${id}`).style.height = (m / 500) * 160 + 'px';
+            document.getElementById(`salt${id}`).style.height = isSplit ? (s / 500) * 160 + 'px' : '0';
+            document.getElementById(`saltLabel${id}`).innerText = `塩: ${formatValue(s)}g`;
+            
+            updateParticles(id, m, c, s);
+        });
+
+        const mA = parseFloat(document.getElementById('massA_n').value) || 0;
+        const cA = document.getElementById('pureA').checked ? 100 : (parseFloat(document.getElementById('concA_n').value) || 0);
+        const mB = parseFloat(document.getElementById('massB_n').value) || 0;
+        const cB = document.getElementById('pureB').checked ? 100 : (parseFloat(document.getElementById('concB_n').value) || 0);
+        const sA = mA * (cA / 100); const sB = mB * (cB / 100);
+
+        document.getElementById('calcA').innerText = `Aの塩: ${mA}g × ${cA/100} = ${formatValue(sA)}g`;
+        document.getElementById('calcB').innerText = `Bの塩: ${mB}g × ${cB/100} = ${formatValue(sB)}g`;
+        document.getElementById('calcTotal').innerText = `合計の塩: ${formatValue(sA + sB)}g ／ 全体の重さ: ${mA + mB}g`;
+        
+        resetResultDisplay();
+    }
+
+    function updateParticles(id, m, c, s) {
+        const beaker = document.getElementById('beaker' + id);
+        particles[id].forEach(p => p.remove());
+        particles[id] = [];
+        if(c >= 100) return;
+        const displayCount = Math.min(s / 1.5, 60);
+        const liqH = (m / 500) * 160;
+        const saltH = (liqH * (c / 100));
+        for(let i=0; i<displayCount; i++) {
+            const p = document.createElement('div');
+            p.className = 'particle';
+            beaker.appendChild(p);
+            if (isSplit && saltH > 0) {
+                p.style.left = Math.random() * 110 + 'px'; p.style.top = (160 - Math.random() * saltH) + 'px';
+            } else {
+                p.style.left = Math.random() * 110 + 'px'; p.style.top = (160 - Math.random() * liqH) + 'px';
+            }
+            particles[id].push(p);
+        }
+    }
+
+    function mix() {
+        const mA = parseFloat(document.getElementById('massA_n').value);
+        const cA = document.getElementById('pureA').checked ? 100 : (parseFloat(document.getElementById('concA_n').value) || 0);
+        const mB = parseFloat(document.getElementById('massB_n').value);
+        const cB = document.getElementById('pureB').checked ? 100 : (parseFloat(document.getElementById('concB_n').value) || 0);
+
+        const totalM = mA + mB;
+        const totalS = (mA * cA / 100) + (mB * cB / 100);
+        const finalC = totalM > 0 ? (totalS / totalM) * 100 : 0;
+
+        const resH = (totalM / 1000) * 220; 
+        document.getElementById('liqR').style.height = resH + 'px';
+        document.getElementById('saltR').style.height = isSplit ? (totalS / totalM) * resH + 'px' : '0';
+        
+        document.getElementById('infoR').innerHTML = `${totalM}g<br>(${formatValue(finalC)}%)`;
+        document.getElementById('saltLabelR').innerText = `塩: ${formatValue(totalS)}g`;
+
+        // ❹ 小数点判定
+        let rounded2 = Math.round(finalC * 100) / 100;
+        if (finalC === rounded2) {
+            document.getElementById('result-formula').innerHTML = `濃度： ${finalC} %`;
+        } else {
+            let detailedC = finalC.toString();
+            if (detailedC.includes('.')) {
+                let parts = detailedC.split('.');
+                if (parts[1].length > 4) {
+                    detailedC = parts[0] + '.' + parts[1].substring(0, 4) + '...';
+                }
+            }
+            document.getElementById('result-formula').innerHTML = `濃度： ${detailedC} % ≒ ${finalC.toFixed(2)} %`;
+        }
+
+        particles.R.forEach(p => p.remove()); particles.R = [];
+        const displayCount = Math.min(totalS / 2, 80);
+        const beakerR = document.getElementById('beakerResult');
+        for(let i=0; i<displayCount; i++){
+            const p = document.createElement('div');
+            p.className = 'particle'; beakerR.appendChild(p);
+            const saltH = isSplit ? (totalS / totalM) * resH : 0;
+            p.style.left = Math.random() * 150 + 'px';
+            p.style.top = (220 - (isSplit ? Math.random() * saltH : Math.random() * resH)) + 'px';
+            particles.R.push(p);
+        }
+    }
+
+    function toggleSplit() { isSplit = !isSplit; document.getElementById('vizContainer').classList.toggle('is-split', isSplit); updateView(); }
+
+    function resetResultDisplay() {
+        document.getElementById('liqR').style.height = '0'; document.getElementById('saltR').style.height = '0';
+        document.getElementById('infoR').innerHTML = `--- g<br>(--- %)`;
+        document.getElementById('result-formula').innerText = "まぜた後の濃度： --- %";
+        document.getElementById('saltLabelR').innerText = "塩: --- g";
+        particles.R.forEach(p => p.remove()); particles.R = [];
+    }
+
+    function reset() {
+        isSplit = false; document.getElementById('pureA').checked = false; document.getElementById('pureB').checked = false;
+        document.getElementById('vizContainer').classList.remove('is-split');
+        document.getElementById('massA_n').value = 200; document.getElementById('massA_r').value = 200;
+        document.getElementById('concA_n').value = 10;  document.getElementById('concA_r').value = 10;
+        document.getElementById('massB_n').value = 300; document.getElementById('massB_r').value = 300;
+        document.getElementById('concB_n').value = 20;  document.getElementById('concB_r').value = 20;
+        updateView();
+    }
+
+    ['massA', 'concA', 'massB', 'concB'].forEach(sync);
+    document.getElementById('pureA').addEventListener('change', updateView);
+    document.getElementById('pureB').addEventListener('change', updateView);
+    updateView();
+</script>
+</body>
+</html>

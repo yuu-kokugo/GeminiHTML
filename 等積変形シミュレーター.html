@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>中学受験算数：等積変形シミュレーター</title>
+    <style>
+        body {
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            background-color: #f4f7f6;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        h1 {
+            color: #333;
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+
+        .description {
+            background-color: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            max-width: 600px;
+            margin-bottom: 20px;
+            line-height: 1.6;
+        }
+
+        .description strong {
+            color: #e74c3c;
+        }
+
+        /* SVGのスタイル */
+        #stage {
+            background-color: white;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+
+        /* コントロールパネルのスタイル */
+        #controls {
+            margin-top: 20px;
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 600px;
+            box-sizing: border-box;
+            text-align: center;
+        }
+
+        .slider-label {
+            display: block;
+            font-size: 18px;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+
+        input[type=range] {
+            width: 100%;
+            cursor: pointer;
+        }
+
+        #data-display {
+            margin-top: 15px;
+            display: flex;
+            justify-content: space-around;
+            font-size: 18px;
+            font-weight: bold;
+            color: #555;
+        }
+
+        .highlight {
+            color: #3498db;
+            font-size: 20px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>等積変形シミュレーター</h1>
+
+    <div class="description">
+        底辺（青色の線）は固定したまま、頂点A（赤い点）を平行線（点線）の上で動かしてみましょう。<br>
+        形は変わっても、<strong>「底辺」と「高さ」が変わらない</strong>ため、三角形の<strong>面積は常に一定</strong>であることがわかります。
+    </div>
+
+    <svg id="stage" width="600" height="400" viewBox="0 0 600 400">
+        <defs>
+            <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+                <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#eee" stroke-width="1"/>
+            </pattern>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#grid)" />
+
+        <line x1="0" y1="100" x2="600" y2="100" stroke="#aaa" stroke-width="2" stroke-dasharray="5,5" />
+
+        <polygon id="triangle" points="0,0 0,0 0,0" fill="rgba(52, 152, 219, 0.3)" stroke="#3498db" stroke-width="3"/>
+
+        <line id="base-line" x1="200" y1="300" x2="400" y2="300" stroke="#2980b9" stroke-width="5" stroke-linecap="round"/>
+        <text x="190" y="320" font-size="20">B</text>
+        <text x="400" y="320" font-size="20">C</text>
+
+        <circle id="vertex-a" cx="300" cy="100" r="8" fill="#e74c3c" />
+        <text id="label-a" x="290" y="80" font-size="24" font-weight="bold" fill="#e74c3c">A</text>
+        
+        <line id="height-line" x1="300" y1="100" x2="300" y2="300" stroke="#e74c3c" stroke-width="2" stroke-dasharray="2,2" />
+        <text id="label-h" x="310" y="200" font-size="16" fill="#e74c3c">高さ h</text>
+
+    </svg>
+
+    <div id="controls">
+        <label for="vertex-x" class="slider-label">頂点 A を動かす</label>
+        <input type="range" id="vertex-x" min="50" max="550" value="300">
+        
+        <div id="data-display">
+            <div>底辺 (BC): <span class="highlight">200</span></div>
+            <div>高さ (h): <span class="highlight">200</span></div>
+            <div>面積 (S): <span class="highlight">20,000</span></div>
+        </div>
+    </div>
+
+    <script>
+        // DOM要素の取得
+        const stage = document.getElementById('stage');
+        const triangle = document.getElementById('triangle');
+        const vertexA = document.getElementById('vertex-a');
+        const labelA = document.getElementById('label-a');
+        const heightLine = document.getElementById('height-line');
+        const labelH = document.getElementById('label-h');
+        const slider = document.getElementById('vertex-x');
+
+        // 定数（固定された底辺の座標）
+        const bx = 200;
+        const by = 300;
+        const cx = 400;
+        const cy = 300;
+        const ay = 100; // 頂点Aのy座標（平行線上なので固定）
+
+        // 初期描画
+        updateTriangle(slider.value);
+
+        // スライダーが動いた時のイベント
+        slider.addEventListener('input', (e) => {
+            updateTriangle(e.target.value);
+        });
+
+        // 三角形と関連要素を更新する関数
+        function updateTriangle(ax) {
+            // 文字列を数値に変換
+            ax = parseFloat(ax);
+
+            // 1. 三角形の座標を更新 (points属性: "Ax,Ay Bx,By Cx,Cy")
+            const pointsStr = `${ax},${ay} ${bx},${by} ${cx},${cy}`;
+            triangle.setAttribute('points', pointsStr);
+
+            // 2. 頂点A（赤い点）とラベルの位置を更新
+            vertexA.setAttribute('cx', ax);
+            labelA.setAttribute('x', ax - 10); // ラベルを少し左にずらす
+
+            // 3. 高さを示す線とラベルの更新
+            heightLine.setAttribute('x1', ax);
+            heightLine.setAttribute('y1', ay);
+            heightLine.setAttribute('x2', ax); // B、Cと同じy座標のx点に垂線を下ろす
+            heightLine.setAttribute('y2', by);
+            labelH.setAttribute('x', ax + 10);
+        }
+    </script>
+</body>
+</html>

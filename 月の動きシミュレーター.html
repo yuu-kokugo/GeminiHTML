@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>完成版：月の満ち欠けシミュレーター</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; background: #050508; color: #eee; margin: 0; padding: 10px; }
+        #container { display: flex; justify-content: center; gap: 15px; flex-wrap: wrap; }
+        .canvas-wrapper { background: #000; border: 1px solid #444; border-radius: 12px; padding: 15px; width: 420px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        .label { margin-bottom: 10px; font-weight: bold; font-size: 0.95rem; color: #f9d71c; letter-spacing: 0.05em; }
+        #info-panel { max-width: 870px; margin: 20px auto; padding: 20px; background: #121215; border-radius: 10px; text-align: left; border-left: 6px solid #f9d71c; min-height: 80px;}
+        .highlight { color: #f9d71c; font-weight: bold; }
+        .controls-hint { font-size: 0.75rem; color: #777; margin-top: 8px; }
+    </style>
+</head>
+<body>
+
+    <div id="container">
+        <div class="canvas-wrapper">
+            <div class="label">【宇宙視点】 北極上空から</div>
+            <canvas id="orbitCanvas" width="400" height="400"></canvas>
+            <div class="controls-hint">月や人をドラッグして反時計回りに動かせます</div>
+        </div>
+        <div class="canvas-wrapper">
+            <div class="label">【観測視点】 地上から見た月</div>
+            <canvas id="moonViewCanvas" width="400" height="400"></canvas>
+            <div class="controls-hint">右が西、左が東。昼間（6時〜18時）は背景が水色になります</div>
+        </div>
+    </div>
+
+    <div id="info-panel">
+        <div id="status-text">読み込み中...</div>
+    </div>
+
+<script>
+const orbitCanvas = document.getElementById('orbitCanvas');
+const orbitCtx = orbitCanvas.getContext('2d');
+const viewCanvas = document.getElementById('moonViewCanvas');
+const viewCtx = viewCanvas.getContext('2d');
+
+const C = 200, R_ORBIT = 150, R_EARTH = 32, R_MOON_ORBIT = 12;
+const R_MOON_VIEW = 30; 
+
+let moonAngle = -Math.PI / 2; 
+let personAngle = -Math.PI / 2; 
+let dragTarget = null;
+
+function handleMove(e) {
+    const rect = orbitCanvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    const x = clientX - rect.left - C;
+    const y = clientY - rect.top - C;
+    if (!dragTarget) return;
+    if (dragTarget === 'moon') moonAngle = Math.atan2(y, x);
+    if (dragTarget === 'person') personAngle = Math.atan2(y, x);
+    draw();
+    if(e.cancelable) e.preventDefault();
+}
+
+orbitCanvas.addEventListener('mousedown', (e) => {
+    const rect = orbitCanvas.getBoundingClientRect();
+    const x = e.clientX - rect.left - C;
+    const y = e.clientY - rect.top - C;
+    const dist = Math.sqrt(x*x + y*y);
+    if (Math.abs(dist - R_ORBIT) < 35) dragTarget = 'moon';
+    else if (dist < R_EARTH + 30) dragTarget = 'person';
+});
+window.addEventListener('mouseup', () => dragTarget = null);
+window.addEventListener('mousemove', handleMove);
+orbitCanvas.addEventListener('touchstart', (e) => {
+    const rect = orbitCanvas.getBoundingClientRect();
+    const x = e.touches[0].clientX - rect.left - C;
+    const y = e.touches[0].clientY - rect.top - C;
+    const dist = Math.sqrt(x*x + y*y);
+    if (Math.abs(dist - R_ORBIT) < 35) dragTarget = 'moon';
+    else if (dist < R_EARTH + 30) dragTarget = 'person';
+}, {passive:false});
+window.addEventListener('touchend', () => dragTarget = null);
+window.addEventListener('touchmove', handleMove, {passive:false});
+
+function draw() {
+    drawOrbit();
+    drawView();
+    updateInfo();
+}
+
+function getHours() {
+    let pNorm = (personAngle % (Math.PI*2) + Math.PI*2) % (Math.PI*2);
+    let totalHours = ( ( (Math.PI*2 - pNorm) % (Math.PI*2) ) / (Math.PI*2) ) * 24 + 12;
+    return Math.floor(totalHours % 24);
+}
+
+function drawOrbit() {
+    orbitCtx.clearRect(0, 0, 400, 400);
+    orbitCtx.strokeStyle = 'rgba(255, 230, 100, 0.3)';
+    for(let i=20; i<400; i+=40) {
+        orbitCtx.beginPath(); orbitCtx.moveTo(400, i); orbitCtx.lineTo(370, i); orbitCtx.stroke();
+    }
+    orbitCtx.fillStyle = '#2196f3';
+    orbitCtx.beginPath(); orbitCtx.arc(C, C, R_EARTH, 0, Math.PI*2); orbitCtx.fill();
+    orbitCtx.fillStyle = 'rgba(0,0,0,0.8)';
+    orbitCtx.beginPath(); orbitCtx.arc(C, C, R_EARTH, Math.PI/2, Math.PI*1.5); orbitCtx.fill();
+    
+    const px = C + R_EARTH * Math.cos(personAngle);
+    const py = C + R_EARTH * Math.sin(personAngle);
+    
+    orbitCtx.save();
+    orbitCtx.translate(px, py);
+    orbitCtx.rotate(personAngle + Math.PI/2);
+    orbitCtx.fillStyle = '#fff';
+    orbitCtx.fillRect(-2, -8, 4, 8);
+    orbitCtx.beginPath(); orbitCtx.arc(0, -11, 3, 0, Math.PI*2); orbitCtx.fill();
+    orbitCtx.restore();
+
+    orbitCtx.save();
+    orbitCtx.fillStyle = '#f9d71c';
+    orbitCtx.font = 'bold 12px sans-serif';
+    orbitCtx.textAlign = 'center';
+    orbitCtx.textBaseline = 'middle';
+
+    const distLabel = 22; 
+    const dirs = [
+        { name: '南', ang: personAngle, offset: distLabel },
+        { name: '北', ang: personAngle + Math.PI, offset: distLabel },
+        { name: '東', ang: personAngle - Math.PI/2, offset: distLabel },
+        { name: '西', ang: personAngle + Math.PI/2, offset: distLabel }
+    ];
+
+    dirs.forEach(d => {
+        const tx = px + d.offset * Math.cos(d.ang);
+        const ty = py + d.offset * Math.sin(d.ang);
+        orbitCtx.fillText(d.name, tx, ty);
+    });
+    orbitCtx.restore();
+
+    orbitCtx.strokeStyle = '#333';
+    orbitCtx.beginPath(); orbitCtx.arc(C, C, R_ORBIT, 0, Math.PI*2); orbitCtx.stroke();
+
+    const mx = C + R_ORBIT * Math.cos(moonAngle);
+    const my = C + R_ORBIT * Math.sin(moonAngle);
+    orbitCtx.fillStyle = '#f9d71c';
+    orbitCtx.beginPath(); orbitCtx.arc(mx, my, R_MOON_ORBIT, 0, Math.PI*2); orbitCtx.fill();
+    orbitCtx.fillStyle = '#000'; 
+    orbitCtx.beginPath(); orbitCtx.arc(mx, my, R_MOON_ORBIT + 0.5, Math.PI/2, Math.PI*1.5); orbitCtx.fill();
+}
+
+function drawView() {
+    viewCtx.clearRect(0, 0, 400, 400);
+    
+    // --- 【修正】昼夜による背景色の切り替え ---
+    const currentHour = getHours();
+    const isDaytime = (currentHour >= 6 && currentHour < 18);
+    viewCtx.fillStyle = isDaytime ? '#87CEEB' : '#08080a'; // 昼はスカイブルー、夜は黒
+    viewCtx.fillRect(0, 0, 400, 400);
+    
+    // 文字色も背景に合わせて調整
+    const labelColor = isDaytime ? '#333' : '#666';
+    const subLabelColor = isDaytime ? '#555' : '#aaa';
+
+    viewCtx.fillStyle = labelColor;
+    viewCtx.font = '13px sans-serif';
+    viewCtx.textAlign = 'center';
+    viewCtx.fillText('東 (左)', 40, 205); viewCtx.fillText('西 (右)', 360, 205);
+    viewCtx.fillStyle = subLabelColor;
+    viewCtx.fillText('南 (頭上)', 200, 35);
+
+    let rel = moonAngle - personAngle;
+    while (rel > Math.PI) rel -= Math.PI * 2;
+    while (rel < -Math.PI) rel += Math.PI * 2;
+
+    if (Math.abs(rel) < Math.PI / 2) {
+        const moonX = 200 + Math.sin(rel) * 150;
+        const moonY = 200 - Math.cos(rel) * 150;
+        viewCtx.save();
+        viewCtx.translate(moonX, moonY);
+        
+        let phaseValue = Math.cos(moonAngle); 
+        
+        // 月の影（背景に合わせて調整）
+        viewCtx.fillStyle = isDaytime ? 'rgba(0,0,0,0.1)' : '#222';
+        viewCtx.beginPath();
+        viewCtx.arc(0, 0, R_MOON_VIEW, 0, Math.PI * 2);
+        viewCtx.fill();
+
+        viewCtx.fillStyle = '#f9d71c';
+        if (!isDaytime) {
+            viewCtx.shadowBlur = 10;
+            viewCtx.shadowColor = 'rgba(249, 215, 28, 0.4)';
+        }
+        
+        viewCtx.beginPath();
+        if (phaseValue <= 0) {
+            viewCtx.arc(0, 0, R_MOON_VIEW, -Math.PI/2, Math.PI/2, false);
+            viewCtx.ellipse(0, 0, Math.abs(phaseValue) * R_MOON_VIEW, R_MOON_VIEW, 0, Math.PI/2, -Math.PI/2, false);
+        } else {
+            viewCtx.arc(0, 0, R_MOON_VIEW, -Math.PI/2, Math.PI/2, false);
+            viewCtx.ellipse(0, 0, phaseValue * R_MOON_VIEW, R_MOON_VIEW, 0, Math.PI/2, -Math.PI/2, true);
+        }
+        
+        if (Math.sin(moonAngle) > 0) {
+            viewCtx.scale(-1, 1);
+        }
+        
+        viewCtx.fill();
+        viewCtx.restore();
+    } else {
+        viewCtx.fillStyle = isDaytime ? '#555' : '#444';
+        viewCtx.textAlign = 'center';
+        viewCtx.fillText('月は地平線の下にあります', 200, 200);
+    }
+}
+
+function updateInfo() {
+    let pNorm = (personAngle % (Math.PI*2) + Math.PI*2) % (Math.PI*2);
+    let totalHours = ( ( (Math.PI*2 - pNorm) % (Math.PI*2) ) / (Math.PI*2) ) * 24 + 12;
+    let h = Math.floor(totalHours % 24);
+    let m = Math.floor((totalHours % 1) * 60);
+    
+    let mNorm = (moonAngle % (Math.PI*2) + Math.PI*2) % (Math.PI*2);
+    let phaseName = ""; 
+    const threshold = 0.14; 
+    
+    if (mNorm < threshold || mNorm > (Math.PI*2 - threshold)) phaseName = "新月";
+    else if (Math.abs(mNorm - Math.PI*1.5) < threshold) phaseName = "上弦の月";
+    else if (Math.abs(mNorm - Math.PI) < threshold) phaseName = "満月";
+    else if (Math.abs(mNorm - Math.PI*0.5) < threshold) phaseName = "下弦の月";
+
+    let phaseHtml = phaseName ? `【月の名称】 <span class="highlight">${phaseName}</span>` : "";
+
+    document.getElementById('status-text').innerHTML = `
+        【現在の時刻】 およそ <span class="highlight">${h}時${m.toString().padStart(2,'0')}分</span><br>
+        ${phaseHtml}
+    `;
+}
+
+draw();
+</script>
+</body>
+</html>

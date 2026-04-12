@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>正方形の転がり（物理的連続性版）</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; background: #fdfdfd; padding: 20px; }
+        .controls { margin-bottom: 20px; }
+        button { padding: 12px 24px; font-size: 16px; cursor: pointer; border-radius: 6px; border: 1px solid #ddd; background: #fff; }
+        #stepBtn { background: #e74c3c; color: white; border: none; font-weight: bold; }
+        #stepBtn:disabled { background: #ccc; }
+        canvas { background: white; border-bottom: 2px solid #333; cursor: crosshair; }
+    </style>
+</head>
+<body>
+
+    <h2>正方形の転がり：点Aの軌跡を追う</h2>
+    <div class="controls">
+        <button id="stepBtn">次の回転を見る</button>
+        <button id="resetBtn">リセット</button>
+    </div>
+
+    <canvas id="canvas" width="900" height="450"></canvas>
+
+<script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const stepBtn = document.getElementById('stepBtn');
+    const resetBtn = document.getElementById('resetBtn');
+
+    const S = 80; // 正方形の一辺
+    const groundY = 350;
+    
+    // 頂点の初期位置 (A, B, C, Dの順)
+    // A:左上, B:左下, C:右下, D:右上
+    let vertices = [
+        { x: 100,     y: groundY - S, label: "A" },
+        { x: 100,     y: groundY,     label: "B" },
+        { x: 100 + S, y: groundY,     label: "C" },
+        { x: 100 + S, y: groundY - S, label: "D" }
+    ];
+
+    let step = 0;
+    let isAnimating = false;
+    let currentAngle = 0;
+    const targetAngle = Math.PI / 2;
+
+    const traceCanvas = document.createElement('canvas');
+    traceCanvas.width = canvas.width;
+    traceCanvas.height = canvas.height;
+    const tCtx = traceCanvas.getContext('2d');
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(traceCanvas, 0, 0);
+
+        // 地面
+        ctx.strokeStyle = "#333"; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(0, groundY); ctx.lineTo(canvas.width, groundY); ctx.stroke();
+
+        // 回転中心の決定 (step0:C, step1:D, step2:A, step3:B)
+        // vertices[ (step + 2) % 4 ] が常に右下の頂点（回転軸）になります
+        const pivotIndex = (step + 2) % 4;
+        const pivot = vertices[pivotIndex];
+
+        ctx.save();
+        if (isAnimating) {
+            ctx.translate(pivot.x, pivot.y);
+            ctx.rotate(currentAngle);
+            ctx.translate(-pivot.x, -pivot.y);
+        }
+
+        // 正方形本体
+        ctx.beginPath();
+        ctx.moveTo(vertices[0].x, vertices[0].y);
+        vertices.forEach(v => ctx.lineTo(v.x, v.y));
+        ctx.closePath();
+        ctx.strokeStyle = "#2980b9"; ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // 頂点とラベル
+        vertices.forEach(v => {
+            const isA = (v.label === "A");
+            ctx.fillStyle = isA ? "red" : "#555";
+            ctx.beginPath();
+            ctx.arc(v.x, v.y, 5, 0, Math.PI * 2);
+            ctx.fill();
+            
+            ctx.font = "bold 16px sans-serif";
+            ctx.fillText(v.label, v.x - 10, v.y - 12);
+        });
+        ctx.restore();
+
+        // Aが中心の時の注釈
+        if (step === 2 && !isAnimating) {
+            ctx.fillStyle = "red";
+            ctx.fillText("Aは回転の中心なので動きません", pivot.x + 20, pivot.y + 40);
+        }
+    }
+
+    function animate() {
+        if (step >= 4) return;
+
+        const pivotIndex = (step + 2) % 4;
+        const pivot = { ...vertices[pivotIndex] };
+        const speed = 0.04;
+
+        if (currentAngle < targetAngle) {
+            isAnimating = true;
+            let oldAngle = currentAngle;
+            currentAngle += speed;
+            if (currentAngle > targetAngle) currentAngle = targetAngle;
+
+            // 軌跡の記録
+            recordStepTrace(pivot, oldAngle, currentAngle);
+
+            draw();
+            requestAnimationFrame(animate);
+        } else {
+            // 回転終了処理：頂点座標を物理的に更新
+            isAnimating = false;
+            currentAngle = 0;
+            
+            vertices.forEach(v => {
+                const dx = v.x - pivot.x;
+                const dy = v.y - pivot.y;
+                v.x = pivot.x + (dx * Math.cos(targetAngle) - dy * Math.sin(targetAngle));
+                v.y = pivot.y + (dx * Math.sin(targetAngle) + dy * Math.cos(targetAngle));
+            });
+
+            step++;
+            if (step >= 4) stepBtn.disabled = true;
+            draw();
+        }
+    }
+
+    function recordStepTrace(pivot, startA, endA) {
+        // 点A(vertices[0])の軌跡を追跡
+        const pointA = vertices[0];
+        const dx = pointA.x - pivot.x;
+        const dy = pointA.y - pivot.y;
+        const radius = Math.sqrt(dx*dx + dy*dy);
+        const startRad = Math.atan2(dy, dx);
+
+        if (radius > 1) { // 半径がある場合のみ描画
+            // 面積の塗り
+            tCtx.fillStyle = "rgba(52, 152, 219, 0.1)";
+            tCtx.beginPath();
+            tCtx.moveTo(pivot.x, pivot.y);
+            tCtx.arc(pivot.x, pivot.y, radius, startRad + startA, startRad + endA);
+            tCtx.fill();
+
+            // 線の描画
+            tCtx.strokeStyle = "red";
+            tCtx.lineWidth = 2;
+            tCtx.beginPath();
+            tCtx.arc(pivot.x, pivot.y, radius, startRad + startA, startRad + endA);
+            tCtx.stroke();
+        }
+    }
+
+    resetBtn.addEventListener('click', () => {
+        vertices = [
+            { x: 100,     y: groundY - S, label: "A" },
+            { x: 100,     y: groundY,     label: "B" },
+            { x: 100 + S, y: groundY,     label: "C" },
+            { x: 100 + S, y: groundY - S, label: "D" }
+        ];
+        step = 0; currentAngle = 0; isAnimating = false;
+        tCtx.clearRect(0, 0, canvas.width, canvas.height);
+        stepBtn.disabled = false;
+        draw();
+    });
+
+    stepBtn.addEventListener('click', animate);
+    draw();
+</script>
+</body>
+</html>

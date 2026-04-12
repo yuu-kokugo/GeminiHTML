@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>おうぎ形の転がりシミュレーター</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; background: #fdfdfd; padding: 20px; }
+        .controls { margin-bottom: 20px; }
+        button { padding: 12px 24px; font-size: 16px; cursor: pointer; border-radius: 6px; border: none; background: #2c3e50; color: white; font-weight: bold; margin: 0 5px; }
+        button:hover { background: #34495e; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        canvas { background: white; border-bottom: 2px solid #333; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .status { margin: 10px; font-weight: bold; color: #d35400; height: 24px; font-size: 1.1em; }
+    </style>
+</head>
+<body>
+
+    <h2>おうぎ形の転がり</h2>
+    <div id="status" class="status">「次の動きを見る」を押してください</div>
+    
+    <div class="controls">
+        <button id="stepBtn">次の動きを見る</button>
+        <button id="resetBtn" style="background: #7f8c8d;">リセット</button>
+    </div>
+
+    <canvas id="canvas" width="1100" height="450"></canvas>
+
+<script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const stepBtn = document.getElementById('stepBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const statusText = document.getElementById('status');
+
+    const scale = 65;
+    const R = 3 * scale; 
+    const angle60 = Math.PI / 3; 
+    const arcLen = R * angle60;
+    const groundY = 380;
+
+    let step = 0; 
+    let t = 0; 
+    let isAnimating = false;
+    let baseX = 80;
+
+    // 数学的に正しい回転軸の定義
+    const pivotA_X = baseX + arcLen;
+    const centerC_X = pivotA_X + R; // ステップ2終了・ステップ3の回転中心
+    const pivotB_X = centerC_X + R; // ステップ3終了・ステップ4の回転中心
+
+    const areaCanvas = document.createElement('canvas');
+    areaCanvas.width = canvas.width; areaCanvas.height = canvas.height;
+    const aCtx = areaCanvas.getContext('2d');
+
+    const lineCanvas = document.createElement('canvas');
+    lineCanvas.width = canvas.width; lineCanvas.height = canvas.height;
+    const lCtx = lineCanvas.getContext('2d');
+
+    const labels = [
+        "1. 弧ABが転がる（Cは水平移動）",
+        "2. 点Aを中心に90度回転（Cが接地）",
+        "3. 中心Cを中心に120度回転（反転）",
+        "4. 点Bを中心に90度回転（Cが起き上がる）",
+        "5. 再び弧ABが転がる（Cは水平移動）"
+    ];
+
+    function reset() {
+        step = 0; t = 0;
+        aCtx.clearRect(0, 0, canvas.width, canvas.height);
+        lCtx.clearRect(0, 0, canvas.width, canvas.height);
+        statusText.innerText = "「次の動きを見る」を押してください";
+        stepBtn.disabled = false; isAnimating = false;
+        draw();
+    }
+
+    function drawSector(context, cx, cy, rotAngle) {
+        context.save();
+        context.translate(cx, cy);
+        context.rotate(rotAngle);
+        
+        context.beginPath();
+        context.moveTo(0, 0); 
+        context.lineTo(0, R); 
+        context.arc(0, 0, R, Math.PI/2, Math.PI/2 - angle60, true); 
+        context.closePath(); 
+        context.strokeStyle = "#2980b9"; context.lineWidth = 3; context.stroke();
+
+        context.restore();
+        
+        const labelB = { 
+            x: cx + R * Math.cos(rotAngle + Math.PI/2), 
+            y: cy + R * Math.sin(rotAngle + Math.PI/2) 
+        };
+        const labelA = { 
+            x: cx + R * Math.cos(rotAngle + Math.PI/2 - angle60), 
+            y: cy + R * Math.sin(rotAngle + Math.PI/2 - angle60) 
+        };
+
+        ctx.font = "bold 18px sans-serif";
+        ctx.fillStyle = "red"; ctx.fillText("C", cx - 20, cy - 10);
+        ctx.fillStyle = "black"; ctx.fillText("B", labelB.x - 5, labelB.y + 20);
+        ctx.fillStyle = "black"; ctx.fillText("A", labelA.x + 5, labelA.y + 15);
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(areaCanvas, 0, 0);
+        ctx.drawImage(lineCanvas, 0, 0);
+
+        ctx.strokeStyle = "#333"; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(0, groundY); ctx.lineTo(canvas.width, groundY); ctx.stroke();
+
+        let cx, cy, rot;
+
+        if (step === 0) {
+            cx = baseX + (t * arcLen); cy = groundY - R; rot = t * angle60;
+        } else if (step === 1) {
+            const rotA = t * (Math.PI / 2);
+            cx = pivotA_X + R * Math.sin(rotA); cy = groundY - R * Math.cos(rotA); rot = angle60 + rotA;
+        } else if (step === 2) {
+            cx = centerC_X; cy = groundY;
+            rot = (angle60 + Math.PI/2) + t * (Math.PI * 2 / 3);
+        } else if (step === 3) {
+            const startRot = angle60 + Math.PI/2 + (Math.PI * 2 / 3);
+            rot = startRot + t * (Math.PI / 2);
+            cx = pivotB_X - R * Math.cos(t * (Math.PI/2));
+            cy = groundY - R * Math.sin(t * (Math.PI/2));
+        } else if (step === 4) {
+            cx = pivotB_X + (t * arcLen); cy = groundY - R;
+            rot = (angle60 + Math.PI/2 + (Math.PI * 2 / 3) + Math.PI/2) + t * angle60;
+        } else {
+            cx = pivotB_X + arcLen; cy = groundY - R;
+            rot = (angle60 + Math.PI/2 + (Math.PI * 2 / 3) + Math.PI/2) + angle60;
+        }
+        drawSector(ctx, cx, cy, rot);
+    }
+
+    function record(prevT, currT) {
+        const pink = "rgba(255, 182, 193, 0.4)";
+        const blue = "rgba(52, 152, 219, 0.1)";
+        lCtx.strokeStyle = "red"; lCtx.lineWidth = 3;
+
+        if (step === 0) {
+            const x1 = baseX + (prevT * arcLen); const x2 = baseX + (currT * arcLen);
+            lCtx.beginPath(); lCtx.moveTo(x1, groundY-R); lCtx.lineTo(x2, groundY-R); lCtx.stroke();
+            aCtx.fillStyle = blue; aCtx.fillRect(x1, groundY-R, x2-x1, R);
+        } else if (step === 1) {
+            const a1 = -Math.PI/2; const a2 = -Math.PI/2 + (currT * Math.PI/2);
+            lCtx.beginPath(); lCtx.arc(pivotA_X, groundY, R, a1, a2); lCtx.stroke();
+            aCtx.fillStyle = pink;
+            aCtx.beginPath(); aCtx.moveTo(pivotA_X, groundY); aCtx.arc(pivotA_X, groundY, R, a1, a2); aCtx.fill();
+        } else if (step === 2) {
+            // 中心Cは接地して動かない
+            lCtx.fillStyle = "red"; lCtx.beginPath(); lCtx.arc(centerC_X, groundY, 1.5, 0, Math.PI*2); lCtx.fill();
+        } else if (step === 3) {
+            const a1 = Math.PI; const a2 = Math.PI + (currT * Math.PI/2);
+            lCtx.beginPath(); lCtx.arc(pivotB_X, groundY, R, a1, a2); lCtx.stroke();
+            aCtx.fillStyle = pink;
+            aCtx.beginPath(); aCtx.moveTo(pivotB_X, groundY); aCtx.arc(pivotB_X, groundY, R, a1, a2); aCtx.fill();
+        } else if (step === 4) {
+            const x1 = pivotB_X + (prevT * arcLen); const x2 = pivotB_X + (currT * arcLen);
+            lCtx.beginPath(); lCtx.moveTo(x1, groundY-R); lCtx.lineTo(x2, groundY-R); lCtx.stroke();
+            aCtx.fillStyle = blue; aCtx.fillRect(x1, groundY-R, x2-x1, R);
+        }
+    }
+
+    function animate() {
+        if (t < 1) {
+            isAnimating = true;
+            let oldT = t; t += 0.012;
+            if (t > 1) t = 1;
+            record(oldT, t);
+            draw();
+            requestAnimationFrame(animate);
+        } else {
+            isAnimating = false; t = 0; step++;
+            if (step < 5) {
+                statusText.innerText = labels[step];
+            } else { 
+                statusText.innerText = "シミュレーション完了"; 
+                stepBtn.disabled = true; 
+            }
+        }
+    }
+
+    stepBtn.addEventListener('click', () => { if (!isAnimating && step < 5) animate(); });
+    resetBtn.addEventListener('click', reset);
+    draw();
+</script>
+</body>
+</html>
