@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>通過算シミュレーター</title>
+    <style>
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; background: #f0f4f8; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        .container { background: white; padding: 25px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 900px; }
+        h2 { color: #2c3e50; text-align: center; border-bottom: 2px solid #e74c3c; padding-bottom: 10px; margin-bottom: 20px; }
+        
+        .control-panel { background: #f8f9fa; padding: 15px; border-radius: 12px; margin-bottom: 20px; border: 1px solid #e9ecef; }
+        .input-row { display: flex; justify-content: center; gap: 20px; align-items: center; }
+        .input-group { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+        input[type="number"] { width: 60px; padding: 5px; border: 1px solid #ccc; border-radius: 4px; }
+
+        .stage { width: 100%; height: 260px; background: #ecf0f1; position: relative; overflow: hidden; border-radius: 10px; border: 2px solid #bdc3c7; margin-bottom: 20px; }
+        .rail { position: absolute; bottom: 60px; width: 100%; height: 4px; background: #95a5a6; }
+        
+        /* 電車 */
+        .train { position: absolute; bottom: 64px; height: 30px; background: #3498db; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 12px; z-index: 5; }
+        .marker { position: absolute; width: 10px; height: 10px; border-radius: 50%; z-index: 10; border: 2px solid white; }
+        .marker-front { background: #e74c3c; top: -15px; right: -5px; }
+        .marker-back { background: #f1c40f; top: -15px; left: -5px; }
+        
+        /* 鉄橋 */
+        .structure { position: absolute; bottom: 60px; height: 80px; z-index: 2; opacity: 0.9; background: rgba(192, 57, 43, 0.15); border-top: 6px solid #c0392b; }
+
+        /* 軌跡 */
+        .dist-line { position: absolute; height: 4px; z-index: 1; display: none; }
+        .dist-label { position: absolute; top: -20px; width: 250px; font-size: 13px; font-weight: bold; opacity: 0; transition: opacity 0.5s; }
+
+        .calc-area { background: #fffde7; padding: 20px; border-radius: 12px; border: 2px dashed #f1c40f; text-align: center; height: 110px; display: flex; flex-direction: column; justify-content: center; }
+        .formula { font-size: 24px; font-weight: bold; color: #c0392b; margin: 5px 0; visibility: hidden; }
+        
+        .btn-group { display: flex; justify-content: center; gap: 10px; margin-top: 15px; }
+        .btn { padding: 12px 30px; border-radius: 8px; border: none; cursor: pointer; font-weight: bold; color: white; }
+        .btn-start { background: #27ae60; }
+        .btn-reset { background: #95a5a6; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>通過算シミュレーター</h2>
+
+    <div class="control-panel">
+        <div class="input-row">
+            <div class="input-group"><label>電車の長さ:</label><input type="number" id="trainL" value="100">m</div>
+            <div class="input-group"><label>鉄橋の長さ:</label><input type="number" id="structL" value="300">m</div>
+            <div class="input-group"><label>速さ(秒速):</label><input type="number" id="speed" value="20">m/秒</div>
+        </div>
+    </div>
+
+    <div class="stage" id="stage">
+        <div class="rail"></div>
+        <div id="structure" class="structure"></div>
+        <div id="train" class="train">
+            電車
+            <div class="marker marker-front"></div>
+            <div class="marker marker-back"></div>
+        </div>
+        <div id="frontTrace" class="dist-line" style="background: #e74c3c; top: 45px;">
+            <div id="fLabel" class="dist-label" style="color:#e74c3c;">先頭が動いた距離</div>
+        </div>
+        <div id="backTrace" class="dist-line" style="background: #f39c12; top: 85px;">
+            <div id="bLabel" class="dist-label" style="color:#d35400;">最後尾が動いた距離</div>
+        </div>
+    </div>
+
+    <div class="btn-group">
+        <button class="btn btn-start" id="startBtn" onclick="toggleSim()">スタート</button>
+        <button class="btn btn-reset" onclick="resetSim()">リセット</button>
+    </div>
+
+    <div class="calc-area">
+        <div id="logicText" style="font-weight: bold;">鉄橋と電車が重なっている間を測ります</div>
+        <div class="formula" id="formulaText">---</div>
+        <div id="timerText" style="color: #7f8c8d; font-size: 14px;">計測時間: 0.00 秒</div>
+    </div>
+</div>
+
+<script>
+    let running = false;
+    let time = 0;
+    let animationId;
+    const scale = 1.5; 
+    const structX = 250; 
+
+    function update(isFinal = false) {
+        const tL = parseFloat(document.getElementById('trainL').value);
+        const sL = parseFloat(document.getElementById('structL').value);
+        const v = parseFloat(document.getElementById('speed').value);
+        
+        const train = document.getElementById('train');
+        const struct = document.getElementById('structure');
+        const fTrace = document.getElementById('frontTrace');
+        const bTrace = document.getElementById('backTrace');
+
+        train.style.width = (tL * scale) + 'px';
+        struct.style.width = (sL * scale) + 'px';
+        struct.style.left = structX + 'px';
+
+        // 判定ポイント
+        // 開始：先頭(trainPos + tL*scale)が structX に到達
+        // 終了：最後尾(trainPos)が (structX + sL*scale) を通過
+        const startT = (structX - tL * scale) / (v * scale);
+        const endT = (structX + sL * scale) / (v * scale);
+        const totalDist = sL + tL;
+
+        // 電車を少し手前から走らせるためのオフセット補正
+        if (time === 0) {
+            // 初期位置を計測開始の少し前に設定
+            train.style.left = (structX - tL * scale - 100) + 'px';
+        }
+
+        if (time >= endT) {
+            time = endT;
+            running = false;
+            document.getElementById('startBtn').innerText = '完了';
+            isFinal = true;
+        }
+
+        const trainPos = (v * time * scale);
+        train.style.left = trainPos + 'px';
+
+        // マーカーの描画ロジック：重なっている間だけ
+        if (time >= startT) {
+            fTrace.style.display = 'block';
+            bTrace.style.display = 'block';
+            
+            let movedDist = (time - startT) * v;
+            let drawDist = Math.min(totalDist, movedDist);
+
+            // 先頭のマーカー開始位置：structX（鉄橋の入り口）
+            fTrace.style.left = structX + 'px';
+            fTrace.style.width = (drawDist * scale) + 'px';
+            
+            // 最後尾のマーカー開始位置：structX - 電車長（計測開始時の最後尾の位置）
+            bTrace.style.left = (structX - tL * scale) + 'px';
+            bTrace.style.width = (drawDist * scale) + 'px';
+        }
+
+        if (isFinal) {
+            document.getElementById('fLabel').style.opacity = 1;
+            document.getElementById('bLabel').style.opacity = 1;
+            const formula = document.getElementById('formulaText');
+            formula.style.visibility = 'visible';
+            document.getElementById('logicText').innerText = `道のり ＝ 鉄橋(${sL}m) ＋ 電車(${tL}m) ＝ ${totalDist}m`;
+            formula.innerText = `${totalDist}m ÷ ${v}m/秒 ＝ ${(totalDist/v).toFixed(2)}秒`;
+        }
+
+        const measureTime = Math.max(0, time - startT);
+        document.getElementById('timerText').innerText = `計測時間: ${measureTime.toFixed(2)} 秒`;
+    }
+
+    function toggleSim() {
+        if (!running && time === 0) {
+            document.getElementById('fLabel').style.opacity = 0;
+            document.getElementById('bLabel').style.opacity = 0;
+            document.getElementById('formulaText').style.visibility = 'hidden';
+            document.getElementById('logicText').innerText = "計測中...";
+        }
+        running = !running;
+        document.getElementById('startBtn').innerText = running ? '停止' : 'スタート';
+        if (running) animate();
+    }
+
+    function animate() {
+        if (!running) return;
+        time += 0.03; 
+        update();
+        animationId = requestAnimationFrame(animate);
+    }
+
+    function resetSim() {
+        running = false;
+        time = 0;
+        cancelAnimationFrame(animationId);
+        document.getElementById('startBtn').innerText = 'スタート';
+        document.getElementById('fLabel').style.opacity = 0;
+        document.getElementById('bLabel').style.opacity = 0;
+        document.getElementById('formulaText').style.visibility = 'hidden';
+        document.getElementById('frontTrace').style.display = 'none';
+        document.getElementById('backTrace').style.display = 'none';
+        document.getElementById('logicText').innerText = "鉄橋と電車が重なっている間を測ります";
+        update();
+    }
+
+    document.querySelectorAll('input').forEach(i => i.addEventListener('input', resetSim));
+    update();
+</script>
+</body>
+</html>
