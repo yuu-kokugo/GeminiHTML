@@ -1,4 +1,4 @@
-# GeminiHTML
+# GeminiHTML（遊：国語）
 Geminiが作ってくれた算数理科の教材集(HTML)
 
 算数
