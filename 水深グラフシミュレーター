@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>水深グラフシミュレーター</title>
+    <style>
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; background: #f0f4f8; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        .container { background: white; padding: 25px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 900px; }
+        h2 { color: #2c3e50; text-align: center; border-bottom: 2px solid #3498db; padding-bottom: 10px; margin-bottom: 20px; }
+        
+        .layout { display: flex; justify-content: center; gap: 40px; align-items: flex-start; }
+        
+        /* 水槽エリア */
+        .tank-view { display: flex; flex-direction: column; align-items: center; }
+        .tank-outer { 
+            width: 300px; height: 300px; 
+            border-left: 5px solid #555; border-right: 5px solid #555; border-bottom: 5px solid #555; 
+            position: relative; background: #fff; overflow: hidden;
+        }
+        /* 段差ブロック */
+        .step-block { 
+            position: absolute; background: #bdc3c7; 
+            border-top: 2px solid #7f8c8d; border-left: 2px solid #7f8c8d;
+            bottom: 0; right: 0; transition: 0.3s;
+        }
+        /* 水 */
+        .water-layer { position: absolute; bottom: 0; left: 0; background: rgba(52, 152, 219, 0.7); width: 100%; transition: none; }
+
+        /* コントロール */
+        .controls { background: #f8f9fa; padding: 15px; border-radius: 12px; margin-bottom: 20px; border: 1px solid #e9ecef; width: 100%; }
+        .input-row { display: flex; align-items: center; gap: 15px; margin-bottom: 5px; }
+        input[type="range"] { flex: 1; }
+        .label-text { width: 100px; font-weight: bold; font-size: 13px; }
+
+        /* グラフ */
+        canvas { background: white; border: 1px solid #ddd; }
+
+        .btn-group { margin-top: 20px; display: flex; gap: 10px; }
+        .btn { padding: 10px 20px; border-radius: 8px; border: none; cursor: pointer; font-weight: bold; color: white; }
+        .btn-start { background: #27ae60; }
+        .btn-reset { background: #95a5a6; }
+
+        .hint { margin-top: 15px; padding: 15px; background: #e8f5e9; border-radius: 10px; border-left: 5px solid #27ae60; font-size: 14px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>水位の変化とグラフ</h2>
+
+    <div class="controls">
+        <div class="input-row">
+            <span class="label-text">段差の幅:</span>
+            <input type="range" id="stepWidth" min="0" max="200" value="150" oninput="resetSim()">
+            <span id="dispStepW" style="width:40px">150</span>px
+        </div>
+        <div class="input-row">
+            <span class="label-text">段差の高さ:</span>
+            <input type="range" id="stepHeight" min="50" max="200" value="150" oninput="resetSim()">
+            <span id="dispStepH" style="width:40px">150</span>px
+        </div>
+    </div>
+
+    <div class="layout">
+        <div class="tank-view">
+            <div class="tank-outer">
+                <div class="water-layer" id="waterBottom"></div>
+                <div class="water-layer" id="waterTop" style="bottom: 150px; width: 0;"></div>
+                <div class="step-block" id="stepBlock"></div>
+            </div>
+            <div class="btn-group">
+                <button class="btn btn-start" id="startBtn" onclick="toggleSim()">水を注ぐ</button>
+                <button class="btn btn-reset" onclick="resetSim()">リセット</button>
+            </div>
+        </div>
+
+        <div class="graph-view">
+            <canvas id="graphCanvas" width="400" height="320"></canvas>
+        </div>
+    </div>
+
+    <div class="hint" id="message">
+        注水ボタンを押すと、グラフが描かれます。
+    </div>
+</div>
+
+<script>
+    let running = false;
+    let time = 0;
+    let totalH = 0;
+    let history = [];
+    let animationId;
+
+    function getInputs() {
+        return {
+            sW: parseInt(document.getElementById('stepWidth').value),
+            sH: parseInt(document.getElementById('stepHeight').value),
+            flow: 50 // 一定の注水量
+        };
+    }
+
+    function toggleSim() {
+        if (totalH >= 300) resetSim();
+        running = !running;
+        document.getElementById('startBtn').innerText = running ? '一時停止' : '再開';
+        if (running) animate();
+    }
+
+    function animate() {
+        if (!running) return;
+        const p = getInputs();
+        
+        // 面積の計算
+        let currentWidth = (totalH < p.sH) ? (300 - p.sW) : 300;
+        let deltaH = p.flow / currentWidth;
+        
+        totalH += deltaH;
+        time += 1;
+
+        if (totalH > 300) totalH = 300;
+        history.push({t: time, h: totalH});
+
+        updateView();
+
+        if (totalH < 300) {
+            animationId = requestAnimationFrame(animate);
+        } else {
+            running = false;
+            document.getElementById('startBtn').innerText = '満水';
+        }
+    }
+
+    function updateView() {
+        const p = getInputs();
+        const msg = document.getElementById('message');
+        
+        // 段差ブロックのサイズ更新
+        const block = document.getElementById('stepBlock');
+        block.style.width = p.sW + 'px';
+        block.style.height = p.sH + 'px';
+
+        // 水の描画
+        const wBottom = document.getElementById('waterBottom');
+        const wTop = document.getElementById('waterTop');
+        
+        if (totalH <= p.sH) {
+            wBottom.style.height = totalH + 'px';
+            wBottom.style.width = (300 - p.sW) + 'px';
+            wTop.style.height = '0px';
+            msg.innerHTML = "下段を溜めています。底面積が小さいので、水位が上がるのが<b>速い</b>です。";
+        } else {
+            wBottom.style.height = p.sH + 'px';
+            wBottom.style.width = (300 - p.sW) + 'px';
+            wTop.style.bottom = p.sH + 'px';
+            wTop.style.height = (totalH - p.sH) + 'px';
+            wTop.style.width = '300px';
+            msg.innerHTML = "上段に入りました！面積が広くなったので、水位の上がり方は<b>ゆっくり</b>になります。";
+        }
+
+        drawGraph();
+    }
+
+    function drawGraph() {
+        const canvas = document.getElementById('graphCanvas');
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, 400, 400);
+
+        // 軸描画
+        ctx.strokeStyle = '#999';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(50, 20); ctx.lineTo(50, 280); ctx.lineTo(380, 280);
+        ctx.stroke();
+
+        ctx.fillStyle = '#555';
+        ctx.fillText('深さ (cm)', 10, 20);
+        ctx.fillText('時間 (秒)', 340, 300);
+
+        // グラフ描画
+        if (history.length > 0) {
+            ctx.strokeStyle = '#e67e22';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            history.forEach((pt, i) => {
+                let x = 50 + pt.t * 0.3;
+                let y = 280 - (pt.h * 0.8);
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            });
+            ctx.stroke();
+        }
+    }
+
+    function resetSim() {
+        running = false;
+        time = 0;
+        totalH = 0;
+        history = [];
+        cancelAnimationFrame(animationId);
+        document.getElementById('dispStepW').innerText = document.getElementById('stepWidth').value;
+        document.getElementById('dispStepH').innerText = document.getElementById('stepHeight').value;
+        document.getElementById('startBtn').innerText = '水を注ぐ';
+        updateView();
+    }
+
+    resetSim();
+</script>
+</body>
+</html>
