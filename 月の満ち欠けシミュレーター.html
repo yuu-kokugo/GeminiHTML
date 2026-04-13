@@ -19,7 +19,7 @@
         <div class="canvas-wrapper">
             <div class="label">【宇宙視点】 北極上空から</div>
             <canvas id="orbitCanvas" width="400" height="400"></canvas>
-            <div class="controls-hint">月や人をドラッグして動かせます（地球の自転・月の公転が連動）</div>
+            <div class="controls-hint">ドラッグまたはマウスホイールで時間を進退できます</div>
         </div>
         <div class="canvas-wrapper">
             <div class="label">【観測視点】 地上から見た月</div>
@@ -44,6 +44,18 @@ const R_MOON_VIEW = 40;
 let moonAngle = -Math.PI / 2; 
 let personAngle = -Math.PI / 2; 
 let dragTarget = null;
+    
+orbitCanvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    // ホイールの回転量に応じて角度を計算 (感度調整: 0.005)
+    let diff = e.deltaY * 0.005; 
+    
+    // 地球の自転を回し、それに伴って月を30分の1の速度で動かす
+    personAngle += diff;
+    moonAngle += diff / 30;
+    
+    draw();
+}, { passive: false });
 
 function handleMove(e) {
     if (!dragTarget) return;
@@ -187,7 +199,6 @@ function drawView() {
         
         viewCtx.save();
         viewCtx.translate(moonX, moonY);
-        
         viewCtx.rotate(rel);
 
         let mNorm = (moonAngle % (Math.PI*2) + Math.PI*2) % (Math.PI*2);
