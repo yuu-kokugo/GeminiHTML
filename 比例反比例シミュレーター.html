@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>比例反比例シミュレーター</title>
+    <style>
+        :root { --primary: #2c3e50; --accent: #e67e22; --bg: #f5f6fa; --blue: #3498db; }
+        body { font-family: 'Hiragino Kaku Gothic ProN', sans-serif; background: var(--bg); display: flex; flex-direction: column; align-items: center; padding: 0; margin: 0; height: 100vh; overflow: hidden; }
+        
+        #top-menu { width: 100%; display: flex; gap: 10px; justify-content: center; padding: 15px; background: white; box-shadow: 0 4px 10px rgba(0,0,0,0.1); z-index: 100; }
+        .mode-btn { padding: 10px 20px; border-radius: 30px; border: 2px solid var(--primary); background: white; cursor: pointer; font-weight: bold; transition: 0.3s; }
+        .mode-btn.active { background: var(--primary); color: white; }
+
+        #formula-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 2000; }
+        #custom-panel { background: white; padding: 30px; border-radius: 20px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); display: flex; flex-direction: column; align-items: center; gap: 20px; }
+        #display-container { width: 100%; padding: 25px; background: #f8f9fa; border-radius: 10px; border: 2px solid var(--blue); text-align: center; min-width: 480px; }
+        #formula-view { font-size: 3.2rem; font-family: 'Times New Roman', serif; font-style: italic; color: var(--primary); letter-spacing: 2px; min-height: 1.2em; display: flex; align-items: center; justify-content: center; }
+        #formula-view span.y-label { font-style: normal; color: #666; margin-right: 15px; font-size: 2.5rem; }
+
+        .keypad { display: grid; grid-template-columns: repeat(5, 80px); gap: 10px; }
+        .key { height: 60px; display: flex; align-items: center; justify-content: center; border: 1px solid #ccc; border-radius: 10px; background: #eee; cursor: pointer; font-weight: bold; font-size: 1.2rem; transition: 0.1s; user-select: none; }
+        .key:active { transform: scale(0.95); background: #ddd; }
+        .key.var { background: #e8f8f5; color: #16a085; font-size: 1.5rem; font-family: serif; font-style: italic; }
+        .key.op { background: #ebf5fb; color: #2980b9; }
+        .key.fn { background: #fef9e7; color: #d4ac0d; }
+        .key.cmd { background: #f2d7d5; color: #c0392b; font-size: 0.8rem; }
+        .key.decide { grid-column: span 5; background: var(--blue); color: white; font-size: 1.3rem; margin-top: 10px; border: none; height: 65px; border-radius: 10px; cursor: pointer; font-weight: bold; }
+
+        #layout { display: grid; grid-template-columns: 350px 650px; gap: 20px; background: white; padding: 20px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); margin-top: 20px; }
+        
+        /* グラフエリアの改善 */
+        #graph-wrapper { position: relative; padding: 30px 40px 40px 40px; background: white; border-radius: 10px; }
+        #graph-container { position: relative; width: 500px; height: 500px; background: #fafafa; border: 1px solid #ddd; }
+        
+        .axis { position: absolute; background: #333; z-index: 5; }
+        .axis-x { height: 3px; width: 520px; bottom: 0; left: -10px; }
+        .axis-y { width: 3px; height: 520px; left: 0; bottom: -10px; }
+        
+        .axis-label { position: absolute; font-weight: bold; font-style: italic; font-size: 1.2rem; color: #333; }
+        .label-x { bottom: -35px; right: -10px; }
+        .label-y { top: -30px; left: -15px; }
+
+        .tick-label { position: absolute; font-size: 0.8rem; color: #666; font-family: monospace; }
+        .tick-x { top: 505px; transform: translateX(-50%); }
+        .tick-y { right: 510px; transform: translateY(50%); text-align: right; width: 20px; }
+
+        .grid-line { position: absolute; background: #eee; }
+        .dot { position: absolute; width: 12px; height: 12px; background: var(--accent); border-radius: 50%; transform: translate(-50%, 50%); z-index: 10; border: 1px solid white; pointer-events: none; }
+        #ideal-path { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: 0.8s; z-index: 4; }
+        svg { width: 100%; height: 100%; }
+
+        #table-area { height: 570px; overflow-y: auto; border: 1px solid #ddd; border-radius: 8px; }
+        table { width: 100%; border-collapse: collapse; }
+        th { position: sticky; top: 0; background: var(--primary); color: white; padding: 10px; z-index: 20; }
+        td { border-bottom: 1px solid #eee; padding: 8px; text-align: center; font-family: monospace; }
+        
+        #controls { grid-column: span 2; display: flex; gap: 10px; align-items: center; padding-top: 15px; border-top: 1px solid #eee; }
+        button.action-btn { padding: 12px 24px; border-radius: 8px; border: none; cursor: pointer; font-weight: bold; }
+        .btn-add { background: var(--accent); color: white; }
+        .btn-show { background: var(--blue); color: white; }
+    </style>
+</head>
+<body>
+
+<div id="top-menu">
+    <button id="btn-prop" class="mode-btn active" onclick="setMode('proportional')">比例 (y = 2x)</button>
+    <button id="btn-inv" class="mode-btn" onclick="setMode('inversely')">反比例 (y = 12/x)</button>
+    <button id="btn-cust" class="mode-btn" onclick="openOverlay()">自由探究モード</button>
+</div>
+
+<div id="formula-overlay">
+    <div id="custom-panel">
+        <h2 style="margin: 0; color: #333;">式を入力してください</h2>
+        <div id="display-container">
+            <div id="formula-view"><span class="y-label">y =</span> <span id="pretty-text"></span></div>
+        </div>
+        <div class="keypad">
+            <div class="key var" onclick="smartInput('x')">x</div>
+            <div class="key op" onclick="smartInput('(')">(</div>
+            <div class="key op" onclick="smartInput(')')">)</div>
+            <div class="key cmd" onclick="smartInput('BS')">1字消す</div>
+            <div class="key cmd" onclick="smartInput('AC')">全部消す</div>
+
+            <div class="key" onclick="smartInput('7')">7</div>
+            <div class="key" onclick="smartInput('8')">8</div>
+            <div class="key" onclick="smartInput('9')">9</div>
+            <div class="key op" onclick="smartInput('/')">÷</div>
+            <div class="key fn" onclick="smartInput('Math.sqrt(')">√</div>
+
+            <div class="key" onclick="smartInput('4')">4</div>
+            <div class="key" onclick="smartInput('5')">5</div>
+            <div class="key" onclick="smartInput('6')">6</div>
+            <div class="key op" onclick="smartInput('*')">×</div>
+            <div class="key fn" onclick="smartInput('**2')">○²</div>
+
+            <div class="key" onclick="smartInput('1')">1</div>
+            <div class="key" onclick="smartInput('2')">2</div>
+            <div class="key" onclick="smartInput('3')">3</div>
+            <div class="key op" onclick="smartInput('+')">＋</div>
+            <div class="key op" onclick="smartInput('-')">－</div>
+
+            <div class="key" onclick="smartInput('0')">0</div>
+            <div class="key" onclick="smartInput('.')">.</div>
+            <div class="key var" style="font-size: 1rem;" onclick="smartInput('Math.PI')">π</div>
+            <button class="key decide" onclick="closeOverlay()">セット完了！</button>
+        </div>
+    </div>
+</div>
+
+<div id="layout">
+    <div id="table-area">
+        <table id="data-table"><thead><tr><th>x</th><th>y</th></tr></thead><tbody></tbody></table>
+    </div>
+    
+    <div id="graph-wrapper">
+        <div class="axis-label label-x">x</div>
+        <div class="axis-label label-y">y</div>
+        
+        <div id="graph-container">
+            <div class="axis axis-x"></div>
+            <div class="axis axis-y"></div>
+            
+            <script>
+                // 目盛り線と数字の生成
+                for(let i=0; i<=10; i++){
+                    let pos = i * 50;
+                    // 垂直グリッド
+                    document.write(`<div class="grid-line" style="width:1px; height:100%; left:${pos}px"></div>`);
+                    // 水平グリッド
+                    document.write(`<div class="grid-line" style="width:100%; height:1px; bottom:${pos}px"></div>`);
+                    // X軸目盛り数字
+                    document.write(`<div class="tick-label tick-x" style="left:${pos}px">${i}</div>`);
+                    // Y軸目盛り数字
+                    if(i > 0) document.write(`<div class="tick-label tick-y" style="bottom:${pos}px">${i}</div>`);
+                }
+            </script>
+            
+            <div id="ideal-path">
+                <svg viewBox="0 0 500 500" preserveAspectRatio="none">
+                    <path id="path-element" fill="none" stroke="var(--blue)" stroke-width="4" stroke-dasharray="10,5" />
+                </svg>
+            </div>
+            <div id="dots-layer"></div>
+        </div>
+    </div>
+
+    <div id="controls">
+        <button class="action-btn btn-add" onclick="addData()">データを1個追加</button>
+        <button class="action-btn btn-add" style="background:#d35400" onclick="addBulk(10)">10個追加</button>
+        <button class="action-btn btn-show" onclick="toggleLine()">正解の線を表示</button>
+        <button class="action-btn" onclick="resetDataAndOpen()">リセット</button>
+        <div id="status" style="margin-left:auto; font-weight:bold;">データ数: 0</div>
+    </div>
+</div>
+
+<script>
+    let mode = 'proportional';
+    let jsFormula = ""; 
+    const SCALE = 50;
+    const dotsLayer = document.getElementById('dots-layer');
+    const tableBody = document.querySelector('#data-table tbody');
+
+    function openOverlay() {
+        document.getElementById('formula-overlay').style.display = 'flex';
+        setMode('custom');
+    }
+
+    function closeOverlay() {
+        if (!jsFormula) return;
+        document.getElementById('formula-overlay').style.display = 'none';
+    }
+
+    function setMode(m) {
+        mode = m;
+        document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+        if(m === 'proportional') document.getElementById('btn-prop').classList.add('active');
+        if(m === 'inversely') document.getElementById('btn-inv').classList.add('active');
+        if(m === 'custom') document.getElementById('btn-cust').classList.add('active');
+        resetData();
+    }
+
+    function smartInput(val) {
+        if (val === 'AC') { jsFormula = ""; }
+        else if (val === 'BS') {
+            if (jsFormula.endsWith('Math.sqrt(')) jsFormula = jsFormula.slice(0, -10);
+            else if (jsFormula.endsWith('Math.PI')) jsFormula = jsFormula.slice(0, -7);
+            else if (jsFormula.endsWith('**2')) jsFormula = jsFormula.slice(0, -3);
+            else jsFormula = jsFormula.slice(0, -1);
+        } else {
+            const lastChar = jsFormula.slice(-1);
+            if ( (/[0-9x\)]/.test(lastChar)) && (/[x\(M]/.test(val) || val === 'Math.sqrt(' || val === 'Math.PI') ) {
+                if (val !== '**2') jsFormula += '*';
+            }
+            jsFormula += val;
+        }
+        renderPrettyDisplay();
+    }
+
+    function renderPrettyDisplay() {
+        let text = jsFormula;
+        text = text.replace(/Math\.sqrt\(/g, '√(');
+        text = text.replace(/Math\.PI/g, 'π');
+        text = text.replace(/\*\*2/g, '²');
+        text = text.replace(/\*/g, ''); 
+        text = text.replace(/\//g, ' ÷ ');
+        text = text.replace(/\+/g, ' + ');
+        text = text.replace(/-/g, ' - ');
+        text = text.replace(/\s+/g, ' ').trim();
+        document.getElementById('pretty-text').innerText = text || "___";
+    }
+
+    function addData() {
+        let x = (Math.random() * 10).toFixed(1);
+        let y;
+        try {
+            if (mode === 'proportional') y = 2 * x;
+            else if (mode === 'inversely') y = 12 / x;
+            else {
+                y = new Function('x', 'return ' + (jsFormula || "0"))(parseFloat(x));
+            }
+        } catch (e) { return; }
+
+        const point = { x: parseFloat(x), y: parseFloat(y).toFixed(2) };
+        if (isNaN(point.y)) return;
+
+        const row = tableBody.insertRow(0);
+        row.innerHTML = `<td>${point.x}</td><td>${point.y}</td>`;
+        
+        if (point.x >= 0 && point.x <= 10 && point.y >= 0 && point.y <= 10) {
+            const dot = document.createElement('div');
+            dot.className = 'dot';
+            dot.style.left = (point.x * SCALE) + 'px';
+            dot.style.bottom = (point.y * SCALE) + 'px';
+            dotsLayer.appendChild(dot);
+        } else {
+            row.style.color = "#ccc";
+        }
+        document.getElementById('status').innerText = `データ数: ${tableBody.rows.length}`;
+    }
+
+    function addBulk(n) { for(let i=0; i<n; i++) addData(); }
+
+    function resetDataAndOpen() {
+        resetData();
+        if(mode === 'custom') openOverlay();
+    }
+
+    function resetData() {
+        dotsLayer.innerHTML = ''; tableBody.innerHTML = '';
+        document.getElementById('ideal-path').style.opacity = "0";
+        document.getElementById('status').innerText = `データ数: 0`;
+    }
+
+    function toggleLine() {
+        const path = document.getElementById('path-element');
+        const ideal = document.getElementById('ideal-path');
+        if(ideal.style.opacity === "1") { ideal.style.opacity = "0"; return; }
+
+        let d = "";
+        const calc = (vx) => {
+            if (mode === 'proportional') return 2 * vx;
+            if (mode === 'inversely') return 12 / vx;
+            return new Function('x', 'return ' + (jsFormula || "0"))(vx);
+        };
+
+        let first = true;
+        for(let x=0; x<=10.1; x+=0.05) {
+            try {
+                let y = calc(x);
+                let py = 500 - (y * SCALE);
+                let px = x * SCALE;
+                if (py >= -100 && py <= 600) { 
+                    if (py >= 0 && py <= 500) {
+                        d += (first ? "M " : " L ") + px + " " + py;
+                        first = false;
+                    } else { first = true; }
+                }
+            } catch(e) { first = true; }
+        }
+        path.setAttribute("d", d);
+        ideal.style.opacity = "1";
+    }
+
+    jsFormula = "2*x";
+    renderPrettyDisplay();
+</script>
+</body>
+</html>
