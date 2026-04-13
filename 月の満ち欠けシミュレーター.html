@@ -24,7 +24,7 @@
         <div class="canvas-wrapper">
             <div class="label">【観測視点】 地上から見た月</div>
             <canvas id="moonViewCanvas" width="400" height="400"></canvas>
-            <div class="controls-hint">右が西、左が東。昼間（6時〜18時）は背景が水色になります</div>
+            <div class="controls-hint">右が西、左が東。月は空の位置に合わせて傾きます</div>
         </div>
     </div>
 
@@ -184,15 +184,14 @@ function drawView() {
     if (Math.abs(rel) < Math.PI / 2) {
         const moonX = 200 + Math.sin(rel) * 150;
         const moonY = 200 - Math.cos(rel) * 150;
+        
         viewCtx.save();
         viewCtx.translate(moonX, moonY);
         
+        viewCtx.rotate(rel);
+
         let mNorm = (moonAngle % (Math.PI*2) + Math.PI*2) % (Math.PI*2);
-        
-        // --- 【修正】昼夜による色の出し分け ---
-        // 昼間：白っぽいグレー / 夜：黄色
         const moonMainColor = isDaytime ? '#e0e0e0' : '#f9d71c';
-        // 影（昼間は透明度の高いグレー）
         const moonShadowColor = isDaytime ? 'rgba(80, 80, 80, 0.25)' : '#222';
         
         viewCtx.fillStyle = moonMainColor; 
@@ -201,7 +200,6 @@ function drawView() {
         viewCtx.fill();
 
         viewCtx.fillStyle = moonShadowColor;
-        
         let cosA = Math.cos(mNorm); 
         
         viewCtx.beginPath();
@@ -215,8 +213,12 @@ function drawView() {
         viewCtx.fill();
 
         if (!isDaytime) {
+            viewCtx.save();
+            viewCtx.globalCompositeOperation = 'destination-over';
             viewCtx.shadowBlur = 15;
             viewCtx.shadowColor = 'rgba(249, 215, 28, 0.5)';
+            viewCtx.beginPath(); viewCtx.arc(0,0, R_MOON_VIEW, 0, Math.PI*2); viewCtx.fill();
+            viewCtx.restore();
         }
         
         viewCtx.restore();
