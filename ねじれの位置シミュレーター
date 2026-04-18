@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>ねじれの位置シミュレーター</title>
+    <style>
+        :root { --primary: #2c3e50; --accent: #e67e22; --bg: #f5f6fa; --blue: #3498db; --success: #27ae60; --error: #e74c3c; }
+        body { font-family: 'Hiragino Kaku Gothic ProN', sans-serif; background: var(--bg); display: flex; flex-direction: column; align-items: center; margin: 0; height: 100vh; overflow: hidden; }
+        
+        #ui-panel { width: 100%; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 10px; padding: 10px; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); z-index: 100; }
+        .group { display: flex; gap: 6px; align-items: center; border-right: 1px solid #eee; padding-right: 10px; }
+        .group:last-of-type { border: none; }
+        
+        .btn { padding: 6px 12px; border-radius: 6px; border: 1.5px solid var(--primary); background: white; cursor: pointer; font-size: 0.85rem; font-weight: bold; transition: 0.2s; white-space: nowrap; }
+        .btn.active { background: var(--primary); color: white; }
+        .btn-hint { background: #f1c40f; border-color: #f39c12; }
+
+        #instruction { font-size: 0.95rem; font-weight: bold; color: var(--primary); }
+        .sub-info { font-size: 0.7rem; color: #888; font-weight: normal; }
+
+        #stage { width: 100%; flex-grow: 1; perspective: 1200px; display: flex; align-items: center; justify-content: center; cursor: grab; }
+        #stage:active { cursor: grabbing; }
+
+        #zoom-layer { transform-style: preserve-3d; transition: transform 0.1s ease-out; }
+        #shape { position: relative; width: 200px; height: 200px; transform-style: preserve-3d; }
+
+        .edge { 
+            position: absolute; background: #95a5a6; 
+            transform-origin: center left; cursor: pointer;
+            transition: background 0.3s;
+            pointer-events: auto; 
+        }
+        .edge::before {
+            content: ''; position: absolute; top: -10px; bottom: -10px; left: 0; right: 0;
+        }
+
+        .edge.base-line { background: var(--accent) !important; height: 6px !important; z-index: 100; box-shadow: 0 0 10px var(--accent); }
+        .edge.correct { background: var(--success) !important; box-shadow: 0 0 15px var(--success); }
+        .edge.flash-error { animation: flash 0.4s; }
+        
+        @keyframes flash {
+            0%, 100% { background: #95a5a6; }
+            50% { background: var(--error); }
+        }
+
+        .edge.hint-line::after {
+            content: ''; position: absolute; left: -200%; width: 500%; height: 0px;
+            border-top: 2px dashed #95a5a6; opacity: 0.4; pointer-events: none;
+        }
+        .edge.base-line.hint-line::after { border-top: 2px dashed var(--accent); opacity: 0.6; }
+
+        #finish-msg { 
+            position: fixed; top: 55%; left: 50%; transform: translate(-50%, -50%);
+            font-size: 5rem; color: var(--success); font-weight: bold;
+            text-shadow: 0 0 25px white; display: none; z-index: 3000; pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+<div id="ui-panel">
+    <div class="group">
+        <button id="shape-cube" class="btn active" onclick="changeShape('cube')">立方体</button>
+        <button id="shape-trapezoid" class="btn" onclick="changeShape('trapezoid')">台形柱</button>
+    </div>
+    <div class="group">
+        <button id="mode-parallel" class="btn" onclick="setQuestionMode('parallel')">平行</button>
+        <button id="mode-intersect" class="btn" onclick="setQuestionMode('intersect')">交わる</button>
+        <button id="mode-skew" class="btn active" onclick="setQuestionMode('skew')">ねじれ</button>
+    </div>
+    <div class="group">
+        <div id="instruction">辺ABに「ねじれの位置」にある辺を選ぼう！ <span class="sub-info">(ドラッグで回転・スクロールで拡大)</span></div>
+    </div>
+    <button id="btn-hint" class="btn btn-hint" onclick="toggleHint()">ヒント</button>
+</div>
+
+<div id="stage">
+    <div id="zoom-layer">
+        <div id="shape"></div>
+    </div>
+</div>
+
+<div id="finish-msg">CLEAR!!</div>
+
+<script>
+    let currentShape = 'cube';
+    let questionMode = 'skew';
+    let rotX = -20, rotY = -35;
+    let scale = 1.0;
+    let isHint = false;
+    let solvedEdges = new Set();
+
+    const shapeEl = document.getElementById('shape');
+    const zoomEl = document.getElementById('zoom-layer');
+    const stageEl = document.getElementById('stage');
+    const msg = document.getElementById('finish-msg');
+
+    const data = {
+        cube: {
+            points: {
+                A: [0,0,0], B: [200,0,0], C: [200,200,0], D: [0,200,0],
+                E: [0,0,200], F: [200,0,200], G: [200,200,200], H: [0,200,200]
+            },
+            edges: [
+                { id: 'AB', p: ['A', 'B'], type: 'base' },
+                { id: 'BC', p: ['B', 'C'], type: 'intersect' },
+                { id: 'CD', p: ['C', 'D'], type: 'parallel' },
+                { id: 'DA', p: ['D', 'A'], type: 'intersect' },
+                { id: 'EF', p: ['E', 'F'], type: 'parallel' },
+                { id: 'FG', p: ['F', 'G'], type: 'skew' },
+                { id: 'GH', p: ['G', 'H'], type: 'parallel' },
+                { id: 'HE', p: ['H', 'E'], type: 'skew' },
+                { id: 'AE', p: ['A', 'E'], type: 'intersect' },
+                { id: 'BF', p: ['B', 'F'], type: 'intersect' },
+                { id: 'CG', p: ['C', 'G'], type: 'skew' },
+                { id: 'DH', p: ['D', 'H'], type: 'skew' }
+            ]
+        },
+        trapezoid: {
+            points: {
+                A: [0,0,0],    B: [50,150,0], C: [200,150,0], D: [200,0,0],
+                E: [0,0,200],  F: [50,150,200], G: [200,150,200], H: [200,0,200]
+            },
+            edges: [
+                { id: 'AB', p: ['A', 'B'], type: 'base' },
+                { id: 'BC', p: ['B', 'C'], type: 'intersect' },
+                { id: 'CD', p: ['C', 'D'], type: 'intersect' },
+                { id: 'DA', p: ['D', 'A'], type: 'intersect' },
+                { id: 'EF', p: ['E', 'F'], type: 'parallel' },
+                { id: 'FG', p: ['F', 'G'], type: 'skew' },
+                { id: 'GH', p: ['G', 'H'], type: 'skew' },
+                { id: 'HE', p: ['H', 'E'], type: 'skew' },
+                { id: 'AE', p: ['A', 'E'], type: 'intersect' },
+                { id: 'BF', p: ['B', 'F'], type: 'intersect' },
+                { id: 'CG', p: ['C', 'G'], type: 'skew' },
+                { id: 'DH', p: ['D', 'H'], type: 'skew' }
+            ]
+        }
+    };
+
+    function init() {
+        render();
+        stageEl.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const delta = e.deltaY > 0 ? -0.05 : 0.05;
+            scale = Math.min(Math.max(0.4, scale + delta), 2.5);
+            updateView();
+        }, { passive: false });
+    }
+
+    function changeShape(s) {
+        currentShape = s;
+        solvedEdges.clear();
+        document.querySelectorAll('.group .btn').forEach(b => {
+            if(b.id.startsWith('shape-')) b.classList.toggle('active', b.id === 'shape-'+s);
+        });
+        render();
+    }
+
+    function setQuestionMode(m) {
+        questionMode = m;
+        solvedEdges.clear();
+        document.querySelectorAll('.group .btn').forEach(b => {
+            if(b.id.startsWith('mode-')) b.classList.toggle('active', b.id === 'mode-'+m);
+        });
+
+        const labels = { parallel: '平行な', intersect: '交わる', skew: 'ねじれの位置にある' };
+        document.getElementById('instruction').innerHTML = `辺ABに「${labels[m]}」辺を選ぼう！ <span class="sub-info">(ドラッグで回転・スクロールで拡大)</span>`;
+        render();
+    }
+
+    function toggleHint() {
+        isHint = !isHint;
+        document.getElementById('btn-hint').classList.toggle('active', isHint);
+        render();
+    }
+
+    function render() {
+        shapeEl.innerHTML = '';
+        const sData = data[currentShape];
+
+        sData.edges.forEach(edge => {
+            const p1 = sData.points[edge.p[0]];
+            const p2 = sData.points[edge.p[1]];
+            const dx = p2[0] - p1[0], dy = p2[1] - p1[1], dz = p2[2] - p1[2];
+            const len = Math.sqrt(dx*dx + dy*dy + dz*dz);
+            
+            const div = document.createElement('div');
+            div.className = `edge ${edge.type === 'base' ? 'base-line' : ''} ${isHint ? 'hint-line' : ''} ${solvedEdges.has(edge.id) ? 'correct' : ''}`;
+            div.style.width = len + 'px';
+            div.style.height = (edge.type === 'base') ? '6px' : '4px';
+            
+            const ry = Math.atan2(dz, dx);
+            const rz = Math.atan2(dy, Math.sqrt(dx*dx + dz*dz));
+            div.style.transform = `translate3d(${p1[0]}px, ${p1[1]}px, ${p1[2]}px) rotateY(${-ry}rad) rotateZ(${rz}rad)`;
+
+            if(edge.type !== 'base') {
+                div.onclick = (e) => {
+                    e.stopPropagation();
+                    if(solvedEdges.has(edge.id)) return;
+                    if(edge.type === questionMode) {
+                        div.classList.add('correct');
+                        solvedEdges.add(edge.id);
+                        checkClear();
+                    } else {
+                        div.classList.add('flash-error');
+                        setTimeout(() => div.classList.remove('flash-error'), 400);
+                    }
+                };
+            } else {
+                div.innerHTML = `<span style="position:absolute; left:0; top:-25px; font-weight:bold; color:var(--accent)">A</span>
+                                 <span style="position:absolute; right:0; top:-25px; font-weight:bold; color:var(--accent)">B</span>`;
+            }
+            shapeEl.appendChild(div);
+        });
+        updateView();
+    }
+
+    function checkClear() {
+        const total = data[currentShape].edges.filter(e => e.type === questionMode).length;
+        if(solvedEdges.size === total) {
+            msg.style.display = 'block';
+            setTimeout(() => msg.style.display = 'none', 2000);
+        }
+    }
+
+    let isDragging = false, lastX, lastY;
+    stageEl.onmousedown = (e) => { isDragging = true; lastX = e.clientX; lastY = e.clientY; };
+    window.onmousemove = (e) => {
+        if(!isDragging) return;
+        rotY += (e.clientX - lastX) * 0.5;
+        rotX -= (e.clientY - lastY) * 0.5;
+        updateView();
+        lastX = e.clientX; lastY = e.clientY;
+    };
+    window.onmouseup = () => isDragging = false;
+
+    function updateView() {
+        zoomEl.style.transform = `scale(${scale})`;
+        shapeEl.style.transform = `rotateX(${rotX}deg) rotateY(${rotY}deg)`;
+    }
+
+    init();
+</script>
+</body>
+</html>
