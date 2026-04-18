@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>円周角の定理シミュレーター</title>
+    <style>
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; background: #f0f2f5; }
+        canvas { background: white; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); cursor: crosshair; }
+        .controls { margin-top: 20px; padding: 20px; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .input-group { margin: 10px 0; display: flex; align-items: center; gap: 10px; }
+        input[type="number"] { width: 60px; padding: 5px; }
+        button { padding: 5px 15px; cursor: pointer; }
+        .info { margin-top: 10px; font-weight: bold; color: #333; }
+    </style>
+</head>
+<body>
+
+    <h2>円周角の定理シミュレーター</h2>
+    
+    <canvas id="canvas" width="500" height="500"></canvas>
+
+    <div class="controls">
+        <div class="input-group">
+            <label>中心角 (1°～359°):</label>
+            <input type="number" id="angleInput" min="1" max="359" value="120">
+            <button onclick="setAngle(60)">60°</button>
+            <button onclick="setAngle(90)">90°</button>
+            <button onclick="setAngle(180)">180°</button>
+        </div>
+        <p style="font-size: 0.8em; color: #666;">※マウスホイールでも中心角を操作できます</p>
+        <div class="info" id="display">
+            中心角: 120° | 円周角: 60°
+        </div>
+    </div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const angleInput = document.getElementById('angleInput');
+const display = document.getElementById('display');
+
+const centerX = 250;
+const centerY = 250;
+const radius = 200;
+
+let centerAngle = 120; // 中心角（度）
+let pAngle = 270;      // 頂点Pの配置角度（度）
+let isDragging = false;
+
+// 初期描画
+draw();
+
+// イベントリスナー
+angleInput.addEventListener('input', (e) => {
+    centerAngle = Math.max(1, Math.min(359, e.target.value));
+    draw();
+});
+
+canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    centerAngle -= Math.sign(e.deltaY);
+    centerAngle = Math.max(1, Math.min(359, centerAngle));
+    angleInput.value = centerAngle;
+    draw();
+});
+
+canvas.addEventListener('mousedown', startDrag);
+window.addEventListener('mousemove', drag);
+window.addEventListener('mouseup', endDrag);
+
+function setAngle(deg) {
+    centerAngle = deg;
+    angleInput.value = deg;
+    draw();
+}
+
+function startDrag(e) {
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    
+    // 頂点Pとの距離判定
+    const px = centerX + radius * Math.cos(pAngle * Math.PI / 180);
+    const py = centerY + radius * Math.sin(pAngle * Math.PI / 180);
+    const dist = Math.sqrt((mouseX - px)**2 + (mouseY - py)**2);
+    
+    if (dist < 20) isDragging = true;
+}
+
+function drag(e) {
+    if (!isDragging) return;
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    
+    pAngle = Math.atan2(mouseY - centerY, mouseX - centerX) * 180 / Math.PI;
+    draw();
+}
+
+function endDrag() {
+    isDragging = false;
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // 基本の円
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+    ctx.strokeStyle = '#ddd';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // 弧の端点A, B
+    const startA = 0; 
+    const endB = centerAngle * Math.PI / 180;
+    
+    const ax = centerX + radius * Math.cos(startA);
+    const ay = centerY + radius * Math.sin(startA);
+    const bx = centerX + radius * Math.cos(endB);
+    const by = centerY + radius * Math.sin(endB);
+
+    // 弧の強調
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, radius, startA, endB);
+    ctx.strokeStyle = '#ff4757';
+    ctx.lineWidth = 4;
+    ctx.stroke();
+
+    // 頂点P
+    const px = centerX + radius * Math.cos(pAngle * Math.PI / 180);
+    const py = centerY + radius * Math.sin(pAngle * Math.PI / 180);
+
+    // 円周角の線 (P-A, P-B)
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(px, py);
+    ctx.lineTo(bx, by);
+    ctx.strokeStyle = '#1e90ff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // 中心角の線 (O-A, O-B)
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(centerX, centerY);
+    ctx.lineTo(bx, by);
+    ctx.strokeStyle = '#777';
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // 点の描画
+    drawPoint(centerX, centerY, 'O (中心)', '#333');
+    drawPoint(ax, ay, 'A', '#333');
+    drawPoint(bx, by, 'B', '#333');
+    drawPoint(px, py, 'P (ドラッグ可)', '#1e90ff');
+
+    display.innerText = `中心角: ${centerAngle}° | 円周角: ${centerAngle / 2}°`;
+}
+
+function drawPoint(x, y, label, color) {
+    ctx.beginPath();
+    ctx.arc(x, y, 5, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.font = '14px Arial';
+    ctx.fillText(label, x + 8, y - 8);
+}
+</script>
+</body>
+</html>
