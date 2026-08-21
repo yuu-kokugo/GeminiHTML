@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>直角三角形の回転移動シミュレーター（支点・辺・角度選択可能）</title>
+    <style>
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; text-align: center; background: #fdfdfd; padding: 20px; color: #333; }
+        #app { max-width: 900px; margin: 0 auto; }
+        .controls-panel { background: #f4f7f6; border-radius: 10px; padding: 15px; margin-bottom: 15px; border: 1px solid #e0e0e0; text-align: left; }
+        .control-group { margin-bottom: 12px; display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+        .control-group label { font-weight: bold; width: 100px; font-size: 14px; }
+        .btn-group { display: flex; flex-wrap: wrap; gap: 6px; }
+        
+        button { padding: 8px 14px; font-size: 14px; cursor: pointer; border-radius: 6px; border: 1px solid #ccc; background: #fff; transition: 0.2s; }
+        button:hover { background: #e9ecef; }
+        button.active { background: #3498db; color: white; border-color: #2980b9; font-weight: bold; }
+        
+        .action-btns { text-align: center; margin-top: 15px; display: flex; justify-content: center; gap: 15px; }
+        #startBtn { background: #2ecc71; color: white; border: none; font-weight: bold; padding: 10px 25px; font-size: 16px; }
+        #startBtn:hover { background: #27ae60; }
+        #startBtn:disabled { background: #ccc; cursor: not-allowed; }
+        #resetBtn { background: #e74c3c; color: white; border: none; font-weight: bold; padding: 10px 25px; font-size: 16px; }
+        #resetBtn:hover { background: #c0392b; }
+
+        canvas { background: white; border: 2px solid #333; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+    </style>
+</head>
+<body>
+
+<div id="app">
+    <h2>直角三角形の回転移動シミュレーター（支点・辺・角度選択可能）</h2>
+
+    <div class="controls-panel">
+        <div class="control-group">
+            <label>回転の中心:</label>
+            <div class="btn-group" id="centerGroup">
+                <button data-val="C" class="active">点 C（直角）</button>
+                <button data-val="A">点 A</button>
+                <button data-val="B">点 B</button>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label>軌跡の線:</label>
+            <div class="btn-group" id="edgeGroup">
+                <button data-val="AB" class="active">辺 AB（斜辺）</button>
+                <button data-val="BC">辺 BC</button>
+                <button data-val="CA">辺 CA</button>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label>回転角:</label>
+            <div class="btn-group" id="angleGroup">
+                <button data-val="30">30°</button>
+                <button data-val="45">45°</button>
+                <button data-val="60">60°</button>
+                <button data-val="90" class="active">90°</button>
+                <button data-val="120">120°</button>
+                <button data-val="180">180°</button>
+                <button data-val="210">210°</button>
+                <button data-val="240">240°</button>
+                <button data-val="270">270°</button>
+                <button data-val="360">360°</button>
+            </div>
+        </div>
+
+        <div class="action-btns">
+            <button id="startBtn">回転させる</button>
+            <button id="resetBtn">リセット</button>
+        </div>
+    </div>
+
+    <canvas id="canvas" width="850" height="550"></canvas>
+</div>
+
+<script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const startBtn = document.getElementById('startBtn');
+    const resetBtn = document.getElementById('resetBtn');
+
+    // 軌跡描画用オフスクリーンキャンバス
+    const traceCanvas = document.createElement('canvas');
+    traceCanvas.width = canvas.width;
+    traceCanvas.height = canvas.height;
+    const tCtx = traceCanvas.getContext('2d');
+
+    // 三角形設定 (BC:3, AC:4, AB:5 の直角三角形)
+    const scale = 45;
+    const lenBC = 3 * scale;
+    const lenAC = 4 * scale;
+    const lenAB = 5 * scale;
+    const cx = 425, cy = 275; // キャンバス中央
+
+    // 設定値
+    let centerPoint = 'C'; // A, B, C
+    let targetEdge = 'AB';  // AB, BC, CA
+    let targetDegree = 90; // 度数法
+    
+    let currentAngle = 0;
+    let isAnimating = false;
+
+    // UIのグループ選択リスナー設定
+    function setupGroupSelector(groupId, callback) {
+        const group = document.getElementById(groupId);
+        group.addEventListener('click', (e) => {
+            if (e.target.tagName === 'BUTTON') {
+                group.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                callback(e.target.dataset.val);
+                resetSimulation();
+            }
+        });
+    }
+
+    setupGroupSelector('centerGroup', val => centerPoint = val);
+    setupGroupSelector('edgeGroup', val => targetEdge = val);
+    setupGroupSelector('angleGroup', val => targetDegree = parseFloat(val));
+
+    // 基準位置（回転角0）での各点のローカル相対座標(中心基準)を取得
+    function getLocalBaseVertices() {
+        // C(0,0), A(0, -AC), B(-BC, 0)
+        let local = {
+            A: { x: 0, y: -lenAC },
+            B: { x: -lenBC, y: 0 },
+            C: { x: 0, y: 0 }
+        };
+
+        const centerLocal = { ...local[centerPoint] };
+
+        // 中心が原点(0,0)になるようにシフト
+        return {
+            A: { x: local.A.x - centerLocal.x, y: local.A.y - centerLocal.y },
+            B: { x: local.B.x - centerLocal.x, y: local.B.y - centerLocal.y },
+            C: { x: local.C.x - centerLocal.x, y: local.C.y - centerLocal.y }
+        };
+    }
+
+    // 指定した角度（rad）のときの各頂点座標を取得
+    function getGeometry(rad) {
+        const base = getLocalBaseVertices();
+        const cos = Math.cos(rad);
+        const sin = Math.sin(rad);
+
+        const rotate = (p) => ({
+            x: cx + (p.x * cos - p.y * sin),
+            y: cy + (p.x * sin + p.y * cos)
+        });
+
+        const A = rotate(base.A);
+        const B = rotate(base.B);
+        const C = rotate(base.C);
+
+        // 垂線の足 D の計算（中心から対象の辺への最短距離点）
+        let P1, P2;
+        if (targetEdge === 'AB') { P1 = A; P2 = B; }
+        else if (targetEdge === 'BC') { P1 = B; P2 = C; }
+        else if (targetEdge === 'CA') { P1 = C; P2 = A; }
+
+        const centerPos = { x: cx, y: cy };
+        const D = getFootOfPerpendicular(centerPos, P1, P2);
+
+        return { A, B, C, D, P1, P2 };
+    }
+
+    // 点Pから線分 P1-P2 に下ろした垂線の足（または端点）を計算
+    function getFootOfPerpendicular(P, P1, P2) {
+        const dx = P2.x - P1.x;
+        const dy = P2.y - P1.y;
+        const lenSq = dx * dx + dy * dy;
+        if (lenSq === 0) return { ...P1 };
+
+        let u = ((P.x - P1.x) * dx + (P.y - P1.y) * dy) / lenSq;
+        u = Math.max(0, Math.min(1, u)); // 線分内に制限
+
+        return {
+            x: P1.x + u * dx,
+            y: P1.y + u * dy
+        };
+    }
+
+    // 直角マーク描画関数
+    function drawRightAngle(context, pCorner, p1, p2, size = 10) {
+        const len1 = Math.hypot(p1.x - pCorner.x, p1.y - pCorner.y);
+        const len2 = Math.hypot(p2.x - pCorner.x, p2.y - pCorner.y);
+        if (len1 < 1 || len2 < 1) return;
+
+        const u1x = (p1.x - pCorner.x) / len1, u1y = (p1.y - pCorner.y) / len1;
+        const u2x = (p2.x - pCorner.x) / len2, u2y = (p2.y - pCorner.y) / len2;
+
+        context.beginPath();
+        context.moveTo(pCorner.x + u1x * size, pCorner.y + u1y * size);
+        context.lineTo(pCorner.x + u1x * size + u2x * size, pCorner.y + u1y * size + u2y * size);
+        context.lineTo(pCorner.x + u2x * size, pCorner.y + u2y * size);
+        context.stroke();
+    }
+
+    // 三角形の描画
+    function drawTriangle(g, color, isDashed = false, showLabels = false) {
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        if (isDashed) ctx.setLineDash([5, 5]);
+
+        // 三角形 ABC
+        ctx.beginPath();
+        ctx.moveTo(g.A.x, g.A.y);
+        ctx.lineTo(g.B.x, g.B.y);
+        ctx.lineTo(g.C.x, g.C.y);
+        ctx.closePath();
+        ctx.stroke();
+
+        // 頂点 C の直角マーク
+        drawRightAngle(ctx, g.C, g.A, g.B);
+
+        // 垂線 (中心から線分への最短距離線)
+        const centerPos = { x: cx, y: cy };
+        const distToD = Math.hypot(g.D.x - centerPos.x, g.D.y - centerPos.y);
+        
+        // 中心が選択辺の上にない場合のみ垂線を描画
+        if (distToD > 2) {
+            ctx.beginPath();
+            ctx.setLineDash([3, 3]);
+            ctx.moveTo(centerPos.x, centerPos.y);
+            ctx.lineTo(g.D.x, g.D.y);
+            ctx.stroke();
+
+            ctx.setLineDash([]);
+            drawRightAngle(ctx, g.D, centerPos, g.P1, 8);
+        }
+
+        if (showLabels) {
+            ctx.fillStyle = color;
+            ctx.font = "bold 15px sans-serif";
+            ctx.fillText("C", g.C.x + 8, g.C.y + 15);
+            ctx.fillText("A", g.A.x + 5, g.A.y - 8);
+            ctx.fillText("B", g.B.x - 18, g.B.y + 12);
+
+            if (distToD > 2) {
+                ctx.fillText("D", g.D.x - 10, g.D.y - 8);
+            }
+
+            // 中心点の強調表示
+            ctx.beginPath();
+            ctx.arc(cx, cy, 5, 0, Math.PI * 2);
+            ctx.fillStyle = "#e74c3c";
+            ctx.fill();
+        }
+        ctx.restore();
+    }
+
+    // メイン描画処理
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // 1. 軌跡の描画
+        ctx.drawImage(traceCanvas, 0, 0);
+
+        // 2. 初期位置（点線固定）
+        const gStart = getGeometry(0);
+        drawTriangle(gStart, "#bbb", true, true);
+
+        // 3. 現在の動く三角形
+        const targetRad = targetDegree * Math.PI / 180;
+        const gCurrent = getGeometry(currentAngle);
+        drawTriangle(gCurrent, "#333", false, isAnimating || currentAngle === targetRad);
+    }
+
+    // 選択された「辺」が通過する領域を重ね塗り
+    function recordTrace(prevRad, currRad) {
+        const g1 = getGeometry(prevRad);
+        const g2 = getGeometry(currRad);
+
+        tCtx.save();
+
+        // 移動領域の四角形塗りつぶし (P1_old -> P2_old -> P2_new -> P1_new)
+        tCtx.beginPath();
+        tCtx.moveTo(g1.P1.x, g1.P1.y);
+        tCtx.lineTo(g1.P2.x, g1.P2.y);
+        tCtx.lineTo(g2.P2.x, g2.P2.y);
+        tCtx.lineTo(g2.P1.x, g2.P1.y);
+        tCtx.closePath();
+
+        tCtx.fillStyle = "rgba(100, 100, 100, 0.25)";
+        tCtx.fill();
+
+        // 境界線（各端点 P1, P2 および D の円弧）
+        tCtx.strokeStyle = "#555";
+        tCtx.lineWidth = 1;
+
+        const drawArc = (p1, p2) => {
+            const r1 = Math.hypot(p1.x - cx, p1.y - cy);
+            if (r1 > 1) {
+                const a1 = Math.atan2(p1.y - cy, p1.x - cx);
+                const a2 = Math.atan2(p2.y - cy, p2.x - cx);
+                tCtx.beginPath();
+                tCtx.arc(cx, cy, r1, a1, a2);
+                tCtx.stroke();
+            }
+        };
+
+        drawArc(g1.P1, g2.P1); // 端点1の軌跡
+        drawArc(g1.P2, g2.P2); // 端点2の軌跡
+        drawArc(g1.D, g2.D);   // 最短距離点Dの軌跡（包絡線）
+
+        tCtx.restore();
+    }
+
+    // アニメーション制御
+    function animate() {
+        const targetRad = targetDegree * Math.PI / 180;
+        const speed = 0.03;
+
+        if (currentAngle < targetRad) {
+            isAnimating = true;
+            let oldAngle = currentAngle;
+            currentAngle += speed;
+            if (currentAngle > targetRad) currentAngle = targetRad;
+
+            recordTrace(oldAngle, currentAngle);
+            draw();
+            requestAnimationFrame(animate);
+        } else {
+            isAnimating = false;
+            startBtn.disabled = true;
+            draw();
+        }
+    }
+
+    function resetSimulation() {
+        currentAngle = 0;
+        isAnimating = false;
+        startBtn.disabled = false;
+        tCtx.clearRect(0, 0, canvas.width, canvas.height);
+        draw();
+    }
+
+    resetBtn.addEventListener('click', resetSimulation);
+    startBtn.addEventListener('click', () => {
+        const targetRad = targetDegree * Math.PI / 180;
+        if (!isAnimating && currentAngle < targetRad) animate();
+    });
+
+    // 初回描画
+    draw();
+</script>
+</body>
+</html>
